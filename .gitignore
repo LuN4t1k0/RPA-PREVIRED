@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 .env
+checkpoint.json
+output/
+test_*_manual.py
+*.zip
