@@ -1,12 +1,13 @@
 import queue
 import tempfile
 import threading
+import time
 import streamlit as st
 
-from bot.login import abrir_sesion, cerrar_sesion
-from bot.discovery import obtener_empresas, descubrir_todo
+from bot.login import abrir_sesion
+from bot.discovery import obtener_empresas, obtener_nominas_empresa
 from bot.downloader import descargar_empresa
-from bot.thread import BotThread
+from bot.session import PlaywrightSession
 from checkpoint import Checkpoint
 from models import BotMessage, Estado
 from zip_builder import construir_zip
@@ -16,21 +17,20 @@ st.set_page_config(page_title="Previred Downloader", page_icon="📄", layout="c
 # ── Inicialización de estado ──────────────────────────────────────────────────
 for key, default in {
     "paso": 1,
-    "empresas": [],
-    "seleccion": {},          # {(rut, periodo, nomina_slug): bool}
-    "planillas": [],          # lista de Planilla procesadas
-    "bot_thread": None,
-    "msg_queue": None,
+    "session": None,           # PlaywrightSession (hilo persistente)
+    "task_running": False,
     "stop_event": None,
-    "pw": None,
-    "browser": None,
-    "ctx": None,
-    "page": None,
-    "tmpdir": None,
-    "zip_buffer": None,
+    "empresas": [],
+    "empresas_cargadas": False,
+    "empresa_seleccionada": None,
     "desde": "",
     "hasta": "",
-    "discovery_procesadas": 0,
+    "discovery_done": False,
+    "seleccion": {},
+    "planillas": [],
+    "tmpdir": None,
+    "zip_buffer": None,
+    "discovery_status": "",
     "download_log": [],
 }.items():
     if key not in st.session_state:
@@ -38,7 +38,7 @@ for key, default in {
 
 
 def _barra_pasos(actual: int):
-    pasos = ["1. Acceso", "2. Descubriendo", "3. Selección", "4. Descargando", "5. Listo"]
+    pasos = ["1. Acceso", "2. Empresa", "3. Selección", "4. Descargando", "5. Listo"]
     cols = st.columns(len(pasos))
     for i, (col, nombre) in enumerate(zip(cols, pasos), start=1):
         if i < actual:
@@ -50,161 +50,207 @@ def _barra_pasos(actual: int):
     st.divider()
 
 
+def _poll(session: PlaywrightSession):
+    """Lee un mensaje de la cola. Si no hay, reprograma el rerun y retorna None."""
+    try:
+        return session.msg_queue.get_nowait()
+    except Exception:
+        time.sleep(0.3)
+        st.rerun()
+        return None
+
+
 # ── PASO 1: Acceso ────────────────────────────────────────────────────────────
 def paso_acceso():
     _barra_pasos(1)
     st.title("📄 Previred Downloader")
-    st.subheader("Ingresa tus credenciales y el rango de períodos")
+    st.subheader("Ingresa tus credenciales")
 
     with st.form("form_acceso"):
         col1, col2 = st.columns(2)
         rut = col1.text_input("RUT", placeholder="15.644.021-3")
         password = col2.text_input("Contraseña", type="password")
-
-        col3, col4 = st.columns(2)
-        desde = col3.text_input("Desde (yyyy-mm)", placeholder="2010-01")
-        hasta = col4.text_input("Hasta (yyyy-mm)", placeholder="2024-12")
-
-        submitted = st.form_submit_button("▶ Comenzar", use_container_width=True, type="primary")
+        submitted = st.form_submit_button("▶ Conectar", use_container_width=True, type="primary")
 
     if submitted:
-        if not all([rut, password, desde, hasta]):
-            st.error("Completa todos los campos.")
+        if not rut or not password:
+            st.error("Ingresa RUT y contraseña.")
             return
 
-        with st.spinner("Conectando con Previred..."):
+        session = PlaywrightSession()
+        session.start()
+
+        done = threading.Event()
+        login_error: list[str] = []
+        _rut, _password = rut, password
+
+        def do_login(sess: PlaywrightSession):
             try:
-                import asyncio
-                pw, browser, ctx, page = asyncio.run(abrir_sesion(rut, password))
-                st.session_state.pw = pw
-                st.session_state.browser = browser
-                st.session_state.ctx = ctx
-                st.session_state.page = page
-                st.session_state.desde = desde
-                st.session_state.hasta = hasta
-                st.session_state.paso = 2
-                st.rerun()
+                pw, browser, ctx, page = abrir_sesion(_rut, _password)
+                sess.pw = pw
+                sess.browser = browser
+                sess.page = page
             except ValueError as e:
-                st.error(str(e))
+                login_error.append(str(e))
+            finally:
+                done.set()
+
+        session.submit(do_login)
+
+        with st.spinner("Conectando con Previred..."):
+            done.wait(timeout=30)
+
+        if login_error:
+            st.error(login_error[0])
+            session.stop()
+        else:
+            st.session_state.session = session
+            st.session_state.paso = 2
+            st.rerun()
 
 
-# ── PASO 2: Descubriendo ──────────────────────────────────────────────────────
-def paso_descubriendo():
+# ── PASO 2: Elegir empresa ────────────────────────────────────────────────────
+def paso_elegir_empresa():
     _barra_pasos(2)
-    st.title("🔍 Buscando empresas y períodos disponibles")
+    st.title("🏢 Selecciona la empresa")
+    session: PlaywrightSession = st.session_state.session
 
-    if st.session_state.bot_thread is None:
-        msg_queue = queue.Queue()
-        stop_event = threading.Event()
-        st.session_state.msg_queue = msg_queue
-        st.session_state.stop_event = stop_event
+    # ── Fase A: cargar lista ──────────────────────────────────────────────────
+    if not st.session_state.empresas_cargadas:
+        if not st.session_state.task_running:
+            session.drain()
 
-        # Capturar valores del hilo principal antes de crear el BotThread
-        _page = st.session_state.page
-        _desde = st.session_state.desde
-        _hasta = st.session_state.hasta
+            def tarea_empresas(sess: PlaywrightSession):
+                empresas = obtener_empresas(sess.page)
+                sess.msg_queue.put(BotMessage(tipo="empresas_cargadas", datos={"empresas": empresas}))
 
-        async def tarea_discovery(mq, se):
-            empresas = await obtener_empresas(_page)
-            mq.put(BotMessage(tipo="empresas_encontradas", datos={"empresas": empresas}))
-            await descubrir_todo(_page, empresas, _desde, _hasta, mq, se)
+            session.submit(tarea_empresas)
+            st.session_state.task_running = True
 
-        t = BotThread(coro_fn=tarea_discovery, msg_queue=msg_queue, stop_event=stop_event)
-        t.start()
-        st.session_state.bot_thread = t
+        st.info("⏳ Cargando lista de empresas...")
+        msg = _poll(session)
+        if msg is None:
+            return
 
-    q = st.session_state.msg_queue
-    t = st.session_state.bot_thread
+        if msg.tipo == "empresas_cargadas":
+            st.session_state.empresas = msg.datos["empresas"]
+            st.session_state.empresas_cargadas = True
+            st.session_state.task_running = False
+            st.rerun()
+        elif msg.tipo == "error_fatal":
+            st.error(f"Error cargando empresas: {msg.datos.get('msg')}")
+            st.session_state.task_running = False
+        return
 
-    # Track progress in session_state so it persists across reruns
-    if "discovery_procesadas" not in st.session_state:
-        st.session_state.discovery_procesadas = 0
-
-    total_empresas = max(len(st.session_state.empresas), 1)
-    procesadas = st.session_state.discovery_procesadas
-
-    progreso = st.progress(min(procesadas / total_empresas, 1.0))
-    estado_txt = st.empty()
-    if procesadas > 0:
-        estado_txt.text(f"Procesando empresas... ({procesadas}/{total_empresas})")
-    else:
-        estado_txt.text("Iniciando búsqueda...")
-
-    # Read one message per rerun
-    q = st.session_state.msg_queue
-    try:
-        msg: BotMessage = q.get_nowait()
-    except Exception:
-        # No message yet — rerun to poll again if thread still alive
-        if t.is_alive():
-            import time
-            time.sleep(0.3)
+    # ── Fase B: selección ─────────────────────────────────────────────────────
+    empresas = st.session_state.empresas
+    if not empresas:
+        st.warning("No se encontraron empresas en tu cuenta.")
+        if st.button("↩ Volver al inicio"):
+            st.session_state.session.stop()
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
             st.rerun()
         return
 
-    if msg.tipo == "empresas_encontradas":
-        st.session_state.empresas = msg.datos["empresas"]
-        st.rerun()
+    opciones = [f"{e.nombre}  ({e.rut})" for e in empresas]
+    idx = st.selectbox("Empresa", range(len(opciones)), format_func=lambda i: opciones[i])
 
-    elif msg.tipo == "progreso_empresa":
-        st.session_state.discovery_procesadas += 1
-        st.rerun()
+    col1, col2 = st.columns(2)
+    desde = col1.text_input("Desde (yyyy-mm)", value=st.session_state.desde, placeholder="2010-01")
+    hasta = col2.text_input("Hasta (yyyy-mm)", value=st.session_state.hasta, placeholder="2024-12")
 
-    elif msg.tipo == "fin_discovery":
-        st.session_state.discovery_procesadas = 0  # reset for next run
-        st.session_state.bot_thread = None
+    if st.button("▶ Buscar nóminas", type="primary", use_container_width=True):
+        if not desde or not hasta:
+            st.error("Ingresa el rango de períodos.")
+            return
+        st.session_state.empresa_seleccionada = empresas[idx]
+        st.session_state.desde = desde
+        st.session_state.hasta = hasta
+        st.session_state.discovery_done = False
         st.session_state.paso = 3
         st.rerun()
 
-    elif msg.tipo == "error_fatal":
-        st.error(f"Error: {msg.datos.get('msg')}")
-        st.session_state.bot_thread = None
 
-
-# ── PASO 3: Selección ─────────────────────────────────────────────────────────
+# ── PASO 3: Selección (discovery + checkboxes) ────────────────────────────────
 def paso_seleccion():
     _barra_pasos(3)
-    st.title("☑️ Selecciona qué descargar")
-    st.caption("Elige las empresas y nóminas que quieres procesar.")
+    empresa = st.session_state.empresa_seleccionada
+    session: PlaywrightSession = st.session_state.session
 
-    empresas = st.session_state.empresas
-    if not empresas:
-        st.warning("No se encontraron empresas con datos en el rango seleccionado.")
+    # ── Fase A: discovery ─────────────────────────────────────────────────────
+    if not st.session_state.discovery_done:
+        st.title("🔍 Buscando nóminas...")
+        st.caption(f"{empresa.nombre}  ({empresa.rut})")
+
+        if not st.session_state.task_running:
+            session.drain()
+            stop_event = threading.Event()
+            st.session_state.stop_event = stop_event
+
+            _desde = st.session_state.desde
+            _hasta = st.session_state.hasta
+
+            def tarea_discovery(sess: PlaywrightSession):
+                obtener_nominas_empresa(sess.page, empresa, _desde, _hasta, sess.msg_queue, stop_event)
+                sess.msg_queue.put(BotMessage(tipo="fin_discovery", datos={}))
+
+            session.submit(tarea_discovery)
+            st.session_state.task_running = True
+
+        ultimo_status = st.session_state.discovery_status
+        st.info(f"⏳ {ultimo_status}" if ultimo_status else "⏳ Iniciando búsqueda...")
+
+        msg = _poll(session)
+        if msg is None:
+            return
+
+        if msg.tipo == "status":
+            st.session_state.discovery_status = msg.datos.get("msg", "")
+            st.rerun()
+        elif msg.tipo in ("progreso_empresa", "fin_discovery"):
+            st.session_state.discovery_done = True
+            st.session_state.discovery_status = ""
+            st.session_state.task_running = False
+            st.rerun()
+        elif msg.tipo == "error_fatal":
+            st.error(f"Error: {msg.datos.get('msg')}")
+            st.session_state.task_running = False
+        return
+
+    # ── Fase B: selección ─────────────────────────────────────────────────────
+    st.title("☑️ Selecciona qué descargar")
+    st.caption(f"Empresa: **{empresa.nombre}** ({empresa.rut})")
+
+    if not empresa.nominas_por_periodo:
+        st.warning("No se encontraron nóminas en el rango seleccionado.")
         if st.button("← Volver"):
-            st.session_state.paso = 1
+            st.session_state.paso = 2
+            st.session_state.discovery_done = False
             st.rerun()
         return
 
     seleccion = {}
-
-    for empresa in empresas:
-        if not empresa.nominas_por_periodo:
-            continue
-
-        with st.expander(f"🏢 {empresa.nombre}  —  {empresa.rut}", expanded=False):
-            for periodo, nominas in sorted(empresa.nominas_por_periodo.items()):
-                st.markdown(f"**{periodo}**")
-                for nomina in nominas:
-                    key = (empresa.rut, periodo, nomina.slug)
-                    checked = st.checkbox(nomina.nombre, value=True, key=str(key))
-                    seleccion[key] = checked
+    for periodo, nominas in sorted(empresa.nominas_por_periodo.items()):
+        st.markdown(f"**{periodo}**")
+        for nomina in nominas:
+            key = (periodo, nomina.slug)
+            checked = st.checkbox(nomina.nombre, value=True, key=str(key))
+            seleccion[key] = checked
 
     st.session_state.seleccion = seleccion
-    total_seleccionado = sum(seleccion.values())
+    total = sum(seleccion.values())
 
     st.divider()
     col1, col2 = st.columns([3, 1])
-    col1.caption(f"{total_seleccionado} nóminas seleccionadas")
+    col1.caption(f"{total} nóminas seleccionadas")
 
-    if col2.button("⬇ Descargar", type="primary", disabled=total_seleccionado == 0):
-        # Filtrar empresas según selección
-        for empresa in empresas:
-            empresa.nominas_por_periodo = {
-                periodo: [n for n in nominas if seleccion.get((empresa.rut, periodo, n.slug), False)]
-                for periodo, nominas in empresa.nominas_por_periodo.items()
-            }
-            empresa.nominas_por_periodo = {k: v for k, v in empresa.nominas_por_periodo.items() if v}
-
+    if col2.button("⬇ Descargar", type="primary", disabled=total == 0):
+        empresa.nominas_por_periodo = {
+            periodo: [n for n in nominas if seleccion.get((periodo, n.slug), False)]
+            for periodo, nominas in empresa.nominas_por_periodo.items()
+        }
+        empresa.nominas_por_periodo = {k: v for k, v in empresa.nominas_por_periodo.items() if v}
         st.session_state.tmpdir = tempfile.mkdtemp()
         st.session_state.paso = 4
         st.rerun()
@@ -214,68 +260,49 @@ def paso_seleccion():
 def paso_descargando():
     _barra_pasos(4)
     st.title("⬇️ Descargando planillas...")
+    session: PlaywrightSession = st.session_state.session
 
-    if st.session_state.bot_thread is None:
-        msg_queue = queue.Queue()
+    if not st.session_state.task_running:
+        session.drain()
         stop_event = threading.Event()
-        st.session_state.msg_queue = msg_queue
         st.session_state.stop_event = stop_event
 
-        # Capturar valores del hilo principal antes de crear el BotThread
-        _page = st.session_state.page
-        _empresas = st.session_state.empresas
+        _empresa = st.session_state.empresa_seleccionada
         _tmpdir = st.session_state.tmpdir
         checkpoint = Checkpoint(path=f"{_tmpdir}/checkpoint.json")
 
-        async def tarea_descarga(mq, se):
-            for empresa in _empresas:
-                if se.is_set():
-                    break
-                await descargar_empresa(_page, empresa, _tmpdir, checkpoint, mq, se)
-            mq.put(BotMessage(tipo="fin_descarga", datos={}))
+        def tarea_descarga(sess: PlaywrightSession):
+            descargar_empresa(sess.page, _empresa, _tmpdir, checkpoint, sess.msg_queue, stop_event)
+            sess.msg_queue.put(BotMessage(tipo="fin_descarga", datos={}))
 
-        t = BotThread(coro_fn=tarea_descarga, msg_queue=msg_queue, stop_event=stop_event)
-        t.start()
-        st.session_state.bot_thread = t
+        session.submit(tarea_descarga)
+        st.session_state.task_running = True
 
-    q = st.session_state.msg_queue
-    t = st.session_state.bot_thread
-
-    # Show accumulated log lines
     log_lines = st.session_state.get("download_log", [])
     if log_lines:
         st.code("\n".join(log_lines[-20:]), language=None)
 
-    # Read one message per rerun
-    try:
-        msg: BotMessage = q.get_nowait()
-    except Exception:
-        if t.is_alive():
-            import time
-            time.sleep(0.3)
-            st.rerun()
-        return
-
     BADGE = {"OK": "✅", "SIN_DATOS": "⚠️", "ERROR": "❌", "OMITIDO": "⏭️"}
+
+    msg = _poll(session)
+    if msg is None:
+        return
 
     if msg.tipo == "planilla":
         p = msg.datos["planilla"]
         badge = BADGE.get(p.estado, "•")
-        linea = f"{badge} {p.rut_empresa} / {p.periodo} / {p.institucion}"
-        st.session_state.download_log.append(linea)
+        st.session_state.download_log.append(f"{badge} {p.periodo} / {p.institucion}")
         st.session_state.planillas.append(p)
         st.rerun()
-
     elif msg.tipo == "fin_descarga":
-        st.session_state.bot_thread = None
+        st.session_state.task_running = False
         st.session_state.zip_buffer = construir_zip(st.session_state.tmpdir)
-        st.session_state.download_log = []  # reset for next run
+        st.session_state.download_log = []
         st.session_state.paso = 5
         st.rerun()
-
     elif msg.tipo == "error_fatal":
         st.error(f"Error fatal: {msg.datos.get('msg')}")
-        st.session_state.bot_thread = None
+        st.session_state.task_running = False
 
 
 # ── PASO 5: Listo ─────────────────────────────────────────────────────────────
@@ -296,16 +323,21 @@ def paso_listo():
     st.divider()
 
     if st.session_state.zip_buffer:
+        empresa = st.session_state.empresa_seleccionada
+        rut_clean = empresa.rut.replace(".", "").replace("-", "") if empresa else "planillas"
         st.download_button(
             label="⬇️ Descargar ZIP con todas las planillas",
             data=st.session_state.zip_buffer,
-            file_name="planillas_previred.zip",
+            file_name=f"planillas_{rut_clean}.zip",
             mime="application/zip",
             use_container_width=True,
             type="primary",
         )
 
     if st.button("↩ Nueva ejecución", use_container_width=True):
+        sess = st.session_state.get("session")
+        if sess:
+            sess.stop()
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
@@ -316,7 +348,7 @@ paso = st.session_state.paso
 if paso == 1:
     paso_acceso()
 elif paso == 2:
-    paso_descubriendo()
+    paso_elegir_empresa()
 elif paso == 3:
     paso_seleccion()
 elif paso == 4:
