@@ -99,14 +99,15 @@ def paso_descubriendo():
         st.session_state.msg_queue = msg_queue
         st.session_state.stop_event = stop_event
 
+        # Capturar valores del hilo principal antes de crear el BotThread
+        _page = st.session_state.page
+        _desde = st.session_state.desde
+        _hasta = st.session_state.hasta
+
         async def tarea_discovery(mq, se):
-            empresas = await obtener_empresas(st.session_state.page)
-            st.session_state.empresas = empresas
-            await descubrir_todo(
-                st.session_state.page, empresas,
-                st.session_state.desde, st.session_state.hasta,
-                mq, se,
-            )
+            empresas = await obtener_empresas(_page)
+            mq.put(BotMessage(tipo="empresas_encontradas", datos={"empresas": empresas}))
+            await descubrir_todo(_page, empresas, _desde, _hasta, mq, se)
 
         t = BotThread(coro_fn=tarea_discovery, msg_queue=msg_queue, stop_event=stop_event)
         t.start()
@@ -141,7 +142,11 @@ def paso_descubriendo():
             st.rerun()
         return
 
-    if msg.tipo == "progreso_empresa":
+    if msg.tipo == "empresas_encontradas":
+        st.session_state.empresas = msg.datos["empresas"]
+        st.rerun()
+
+    elif msg.tipo == "progreso_empresa":
         st.session_state.discovery_procesadas += 1
         st.rerun()
 
@@ -216,16 +221,17 @@ def paso_descargando():
         st.session_state.msg_queue = msg_queue
         st.session_state.stop_event = stop_event
 
-        checkpoint = Checkpoint(path=f"{st.session_state.tmpdir}/checkpoint.json")
+        # Capturar valores del hilo principal antes de crear el BotThread
+        _page = st.session_state.page
+        _empresas = st.session_state.empresas
+        _tmpdir = st.session_state.tmpdir
+        checkpoint = Checkpoint(path=f"{_tmpdir}/checkpoint.json")
 
         async def tarea_descarga(mq, se):
-            for empresa in st.session_state.empresas:
+            for empresa in _empresas:
                 if se.is_set():
                     break
-                await descargar_empresa(
-                    st.session_state.page, empresa,
-                    st.session_state.tmpdir, checkpoint, mq, se,
-                )
+                await descargar_empresa(_page, empresa, _tmpdir, checkpoint, mq, se)
             mq.put(BotMessage(tipo="fin_descarga", datos={}))
 
         t = BotThread(coro_fn=tarea_descarga, msg_queue=msg_queue, stop_event=stop_event)
