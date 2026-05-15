@@ -155,11 +155,62 @@ def paso_descubriendo():
         st.session_state.bot_thread = None
 
 
+# ── PASO 3: Selección ─────────────────────────────────────────────────────────
+def paso_seleccion():
+    _barra_pasos(3)
+    st.title("☑️ Selecciona qué descargar")
+    st.caption("Elige las empresas y nóminas que quieres procesar.")
+
+    empresas = st.session_state.empresas
+    if not empresas:
+        st.warning("No se encontraron empresas con datos en el rango seleccionado.")
+        if st.button("← Volver"):
+            st.session_state.paso = 1
+            st.rerun()
+        return
+
+    seleccion = {}
+
+    for empresa in empresas:
+        if not empresa.nominas_por_periodo:
+            continue
+
+        with st.expander(f"🏢 {empresa.nombre}  —  {empresa.rut}", expanded=False):
+            for periodo, nominas in sorted(empresa.nominas_por_periodo.items()):
+                st.markdown(f"**{periodo}**")
+                for nomina in nominas:
+                    key = (empresa.rut, periodo, nomina.slug)
+                    checked = st.checkbox(nomina.nombre, value=True, key=str(key))
+                    seleccion[key] = checked
+
+    st.session_state.seleccion = seleccion
+    total_seleccionado = sum(seleccion.values())
+
+    st.divider()
+    col1, col2 = st.columns([3, 1])
+    col1.caption(f"{total_seleccionado} nóminas seleccionadas")
+
+    if col2.button("⬇ Descargar", type="primary", disabled=total_seleccionado == 0):
+        # Filtrar empresas según selección
+        for empresa in empresas:
+            empresa.nominas_por_periodo = {
+                periodo: [n for n in nominas if seleccion.get((empresa.rut, periodo, n.slug), False)]
+                for periodo, nominas in empresa.nominas_por_periodo.items()
+            }
+            empresa.nominas_por_periodo = {k: v for k, v in empresa.nominas_por_periodo.items() if v}
+
+        st.session_state.tmpdir = tempfile.mkdtemp()
+        st.session_state.paso = 4
+        st.rerun()
+
+
 # ── Despacho de pasos ─────────────────────────────────────────────────────────
 paso = st.session_state.paso
 if paso == 1:
     paso_acceso()
 elif paso == 2:
     paso_descubriendo()
+elif paso == 3:
+    paso_seleccion()
 else:
     st.info(f"Paso {paso} — próximamente")
