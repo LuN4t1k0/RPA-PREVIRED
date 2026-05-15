@@ -31,6 +31,7 @@ for key, default in {
     "desde": "",
     "hasta": "",
     "discovery_procesadas": 0,
+    "download_log": [],
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -204,6 +205,108 @@ def paso_seleccion():
         st.rerun()
 
 
+# ── PASO 4: Descargando ───────────────────────────────────────────────────────
+def paso_descargando():
+    _barra_pasos(4)
+    st.title("⬇️ Descargando planillas...")
+
+    if st.session_state.bot_thread is None:
+        msg_queue = queue.Queue()
+        stop_event = threading.Event()
+        st.session_state.msg_queue = msg_queue
+        st.session_state.stop_event = stop_event
+
+        checkpoint = Checkpoint(path=f"{st.session_state.tmpdir}/checkpoint.json")
+
+        async def tarea_descarga(mq, se):
+            for empresa in st.session_state.empresas:
+                if se.is_set():
+                    break
+                await descargar_empresa(
+                    st.session_state.page, empresa,
+                    st.session_state.tmpdir, checkpoint, mq, se,
+                )
+            mq.put(BotMessage(tipo="fin_descarga", datos={}))
+
+        t = BotThread(coro_fn=tarea_descarga, msg_queue=msg_queue, stop_event=stop_event)
+        t.start()
+        st.session_state.bot_thread = t
+
+    q = st.session_state.msg_queue
+    t = st.session_state.bot_thread
+
+    # Show accumulated log lines
+    log_lines = st.session_state.get("download_log", [])
+    if log_lines:
+        st.code("\n".join(log_lines[-20:]), language=None)
+
+    # Read one message per rerun
+    try:
+        msg: BotMessage = q.get_nowait()
+    except Exception:
+        if t.is_alive():
+            import time
+            time.sleep(0.3)
+            st.rerun()
+        return
+
+    BADGE = {"OK": "✅", "SIN_DATOS": "⚠️", "ERROR": "❌", "OMITIDO": "⏭️"}
+
+    if msg.tipo == "planilla":
+        p = msg.datos["planilla"]
+        badge = BADGE.get(p.estado, "•")
+        linea = f"{badge} {p.rut_empresa} / {p.periodo} / {p.institucion}"
+        if "download_log" not in st.session_state:
+            st.session_state.download_log = []
+        st.session_state.download_log.append(linea)
+        st.session_state.planillas.append(p)
+        st.rerun()
+
+    elif msg.tipo == "fin_descarga":
+        st.session_state.bot_thread = None
+        st.session_state.zip_buffer = construir_zip(st.session_state.tmpdir)
+        st.session_state.download_log = []  # reset for next run
+        st.session_state.paso = 5
+        st.rerun()
+
+    elif msg.tipo == "error_fatal":
+        st.error(f"Error fatal: {msg.datos.get('msg')}")
+        st.session_state.bot_thread = None
+
+
+# ── PASO 5: Listo ─────────────────────────────────────────────────────────────
+def paso_listo():
+    _barra_pasos(5)
+    st.title("🎉 ¡Descarga completa!")
+
+    planillas = st.session_state.planillas
+    ok = sum(1 for p in planillas if p.estado == Estado.OK)
+    sin_datos = sum(1 for p in planillas if p.estado == Estado.SIN_DATOS)
+    errores = sum(1 for p in planillas if p.estado == Estado.ERROR)
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("✅ Descargados", ok)
+    col2.metric("⚠️ Sin datos", sin_datos)
+    col3.metric("❌ Errores", errores)
+
+    st.divider()
+
+    if st.session_state.zip_buffer:
+        st.download_button(
+            label="⬇️ Descargar ZIP con todas las planillas",
+            data=st.session_state.zip_buffer,
+            file_name="planillas_previred.zip",
+            mime="application/zip",
+            use_container_width=True,
+            type="primary",
+        )
+
+    if st.button("↩ Nueva ejecución", use_container_width=True):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
+
+
 # ── Despacho de pasos ─────────────────────────────────────────────────────────
 paso = st.session_state.paso
 if paso == 1:
@@ -212,5 +315,7 @@ elif paso == 2:
     paso_descubriendo()
 elif paso == 3:
     paso_seleccion()
-else:
-    st.info(f"Paso {paso} — próximamente")
+elif paso == 4:
+    paso_descargando()
+elif paso == 5:
+    paso_listo()
