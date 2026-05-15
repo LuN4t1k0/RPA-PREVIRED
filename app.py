@@ -1,0 +1,148 @@
+import queue
+import tempfile
+import threading
+import streamlit as st
+
+from bot.login import abrir_sesion, cerrar_sesion
+from bot.discovery import obtener_empresas, descubrir_todo
+from bot.downloader import descargar_empresa
+from bot.thread import BotThread
+from checkpoint import Checkpoint
+from models import BotMessage, Estado
+from zip_builder import construir_zip
+
+st.set_page_config(page_title="Previred Downloader", page_icon="📄", layout="centered")
+
+# ── Inicialización de estado ──────────────────────────────────────────────────
+for key, default in {
+    "paso": 1,
+    "empresas": [],
+    "seleccion": {},          # {(rut, periodo, nomina_slug): bool}
+    "planillas": [],          # lista de Planilla procesadas
+    "bot_thread": None,
+    "msg_queue": None,
+    "stop_event": None,
+    "pw": None,
+    "browser": None,
+    "ctx": None,
+    "page": None,
+    "tmpdir": None,
+    "zip_buffer": None,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+
+def _barra_pasos(actual: int):
+    pasos = ["1. Acceso", "2. Descubriendo", "3. Selección", "4. Descargando", "5. Listo"]
+    cols = st.columns(len(pasos))
+    for i, (col, nombre) in enumerate(zip(cols, pasos), start=1):
+        if i < actual:
+            col.markdown(f"<div style='text-align:center;color:#888'>✓ {nombre}</div>", unsafe_allow_html=True)
+        elif i == actual:
+            col.markdown(f"<div style='text-align:center;font-weight:bold;color:#7B2FBE'>{nombre}</div>", unsafe_allow_html=True)
+        else:
+            col.markdown(f"<div style='text-align:center;color:#ccc'>{nombre}</div>", unsafe_allow_html=True)
+    st.divider()
+
+
+# ── PASO 1: Acceso ────────────────────────────────────────────────────────────
+def paso_acceso():
+    _barra_pasos(1)
+    st.title("📄 Previred Downloader")
+    st.subheader("Ingresa tus credenciales y el rango de períodos")
+
+    with st.form("form_acceso"):
+        col1, col2 = st.columns(2)
+        rut = col1.text_input("RUT", placeholder="15.644.021-3")
+        password = col2.text_input("Contraseña", type="password")
+
+        col3, col4 = st.columns(2)
+        desde = col3.text_input("Desde (yyyy-mm)", placeholder="2010-01")
+        hasta = col4.text_input("Hasta (yyyy-mm)", placeholder="2024-12")
+
+        submitted = st.form_submit_button("▶ Comenzar", use_container_width=True, type="primary")
+
+    if submitted:
+        if not all([rut, password, desde, hasta]):
+            st.error("Completa todos los campos.")
+            return
+
+        with st.spinner("Conectando con Previred..."):
+            try:
+                import asyncio
+                pw, browser, ctx, page = asyncio.run(abrir_sesion(rut, password))
+                st.session_state.pw = pw
+                st.session_state.browser = browser
+                st.session_state.ctx = ctx
+                st.session_state.page = page
+                st.session_state.desde = desde
+                st.session_state.hasta = hasta
+                st.session_state.paso = 2
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
+
+
+# ── PASO 2: Descubriendo ──────────────────────────────────────────────────────
+def paso_descubriendo():
+    _barra_pasos(2)
+    st.title("🔍 Buscando empresas y períodos disponibles")
+
+    if st.session_state.bot_thread is None:
+        msg_queue = queue.Queue()
+        stop_event = threading.Event()
+        st.session_state.msg_queue = msg_queue
+        st.session_state.stop_event = stop_event
+
+        async def tarea_discovery(mq, se):
+            empresas = await obtener_empresas(st.session_state.page)
+            st.session_state.empresas = empresas
+            await descubrir_todo(
+                st.session_state.page, empresas,
+                st.session_state.desde, st.session_state.hasta,
+                mq, se,
+            )
+
+        t = BotThread(coro_fn=tarea_discovery, msg_queue=msg_queue, stop_event=stop_event)
+        t.start()
+        st.session_state.bot_thread = t
+
+    q = st.session_state.msg_queue
+    t = st.session_state.bot_thread
+
+    progreso = st.progress(0)
+    estado_txt = st.empty()
+    total_empresas = len(st.session_state.empresas) or 1
+    procesadas = 0
+
+    while t.is_alive() or not q.empty():
+        try:
+            msg: BotMessage = q.get(timeout=0.5)
+        except Exception:
+            continue
+
+        if msg.tipo == "progreso_empresa":
+            procesadas += 1
+            estado_txt.text(f"Procesando: {msg.datos.get('empresa', '')} ({procesadas}/{total_empresas})")
+            progreso.progress(min(procesadas / total_empresas, 1.0))
+
+        elif msg.tipo == "fin_discovery":
+            st.session_state.bot_thread = None
+            st.session_state.paso = 3
+            st.rerun()
+
+        elif msg.tipo == "error_fatal":
+            st.error(f"Error: {msg.datos.get('msg')}")
+            st.session_state.bot_thread = None
+            return
+
+
+# ── Despacho de pasos ─────────────────────────────────────────────────────────
+paso = st.session_state.paso
+if paso == 1:
+    paso_acceso()
+elif paso == 2:
+    paso_descubriendo()
+else:
+    st.info(f"Paso {paso} — próximamente")
