@@ -49,6 +49,17 @@ def _ir_a_lista_empresas(page: Page):
     page.wait_for_selector("tr:has(button.ingresar)", timeout=20_000)
 
 
+def _abrir_planillas_pagadas(page: Page):
+    """Abre Planillas Pagadas aunque el overlay lateral intercepte clicks reales."""
+    link = page.locator("span#ver_planillas_pagadas")
+    link.wait_for(state="visible", timeout=20_000)
+    try:
+        link.click(timeout=5_000)
+    except Exception:
+        link.evaluate("element => element.click()")
+    page.wait_for_load_state("networkidle")
+
+
 def obtener_empresas(page: Page) -> list[Empresa]:
     """Extrae lista de empresas desde el Administrador de Empresas."""
     _ir_a_lista_empresas(page)
@@ -103,8 +114,7 @@ def obtener_nominas_empresa(
     page.wait_for_load_state("networkidle")
     page.click("text=Imprimir Documentos")
     page.wait_for_timeout(500)
-    page.click("span#ver_planillas_pagadas")
-    page.wait_for_load_state("networkidle")
+    _abrir_planillas_pagadas(page)
     page.wait_for_timeout(1000)
 
     periodos = _periodos_en_rango(desde, hasta)
@@ -115,8 +125,7 @@ def obtener_nominas_empresa(
         _status(msg_queue, f"{empresa.nombre} — buscando {periodo} ({idx}/{len(periodos)})")
         # Si el formulario quedó oculto (ej. tras una búsqueda previa), restaurarlo
         if page.locator("#mesR0").count() == 0:
-            page.click("span#ver_planillas_pagadas")
-            page.wait_for_load_state("networkidle")
+            _abrir_planillas_pagadas(page)
             page.wait_for_timeout(500)
         año, mes = periodo.split("-")
         # Esperar el AJAX de mes antes de cambiar el año para evitar condición de carrera

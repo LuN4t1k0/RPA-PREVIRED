@@ -3,7 +3,7 @@ import queue
 import threading
 from playwright.sync_api import Page
 
-from bot.discovery import _ir_a_lista_empresas
+from bot.discovery import _abrir_planillas_pagadas, _ir_a_lista_empresas
 from checkpoint import Checkpoint
 from models import BotMessage, Estado, Empresa, Nomina, Planilla
 
@@ -37,16 +37,14 @@ def _navegar_a_planillas_pagadas(page: Page, empresa: Empresa):
     page.wait_for_load_state("networkidle")
     page.click("text=Imprimir Documentos")
     page.wait_for_timeout(500)
-    page.click("span#ver_planillas_pagadas")
-    page.wait_for_load_state("networkidle")
+    _abrir_planillas_pagadas(page)
     page.wait_for_timeout(1000)
 
 
 def _buscar_planillas(page: Page, periodo: str, nomina: Nomina):
     # Asegura que el formulario de búsqueda esté visible (se oculta tras cada Buscar)
     if page.locator("#mesR0").count() == 0:
-        page.click("span#ver_planillas_pagadas")
-        page.wait_for_load_state("networkidle")
+        _abrir_planillas_pagadas(page)
         page.wait_for_timeout(500)
     año, mes = periodo.split("-")
     page.select_option("#mesR0", label=MESES[mes])
