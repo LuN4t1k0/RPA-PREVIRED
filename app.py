@@ -28,6 +28,9 @@ for key, default in {
     "page": None,
     "tmpdir": None,
     "zip_buffer": None,
+    "desde": "",
+    "hasta": "",
+    "discovery_procesadas": 0,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -111,31 +114,45 @@ def paso_descubriendo():
     q = st.session_state.msg_queue
     t = st.session_state.bot_thread
 
-    progreso = st.progress(0)
+    # Track progress in session_state so it persists across reruns
+    if "discovery_procesadas" not in st.session_state:
+        st.session_state.discovery_procesadas = 0
+
+    total_empresas = max(len(st.session_state.empresas), 1)
+    procesadas = st.session_state.discovery_procesadas
+
+    progreso = st.progress(min(procesadas / total_empresas, 1.0))
     estado_txt = st.empty()
-    total_empresas = len(st.session_state.empresas) or 1
-    procesadas = 0
+    if procesadas > 0:
+        estado_txt.text(f"Procesando empresas... ({procesadas}/{total_empresas})")
+    else:
+        estado_txt.text("Iniciando búsqueda...")
 
-    while t.is_alive() or not q.empty():
-        try:
-            msg: BotMessage = q.get(timeout=0.5)
-        except Exception:
-            continue
-
-        if msg.tipo == "progreso_empresa":
-            procesadas += 1
-            estado_txt.text(f"Procesando: {msg.datos.get('empresa', '')} ({procesadas}/{total_empresas})")
-            progreso.progress(min(procesadas / total_empresas, 1.0))
-
-        elif msg.tipo == "fin_discovery":
-            st.session_state.bot_thread = None
-            st.session_state.paso = 3
+    # Read one message per rerun
+    q = st.session_state.msg_queue
+    try:
+        msg: BotMessage = q.get_nowait()
+    except Exception:
+        # No message yet — rerun to poll again if thread still alive
+        if t.is_alive():
+            import time
+            time.sleep(0.3)
             st.rerun()
+        return
 
-        elif msg.tipo == "error_fatal":
-            st.error(f"Error: {msg.datos.get('msg')}")
-            st.session_state.bot_thread = None
-            return
+    if msg.tipo == "progreso_empresa":
+        st.session_state.discovery_procesadas += 1
+        st.rerun()
+
+    elif msg.tipo == "fin_discovery":
+        st.session_state.discovery_procesadas = 0  # reset for next run
+        st.session_state.bot_thread = None
+        st.session_state.paso = 3
+        st.rerun()
+
+    elif msg.tipo == "error_fatal":
+        st.error(f"Error: {msg.datos.get('msg')}")
+        st.session_state.bot_thread = None
 
 
 # ── Despacho de pasos ─────────────────────────────────────────────────────────
