@@ -37,15 +37,16 @@ def _ir_a_lista_empresas(page: Page):
     # Si estamos dentro de wEmpresas (empresa dashboard o planillas), volver al portal via Inicio
     if "wPortal" not in page.url:
         page.locator("a:has-text('Inicio')").first.click()
-        page.wait_for_url("**/wPortal/**", timeout=15_000)
+        page.wait_for_url("**/wPortal/**", timeout=20_000)
         page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(1500)  # El portal renderiza li#empresa un momento después de networkidle
 
     # Desde el portal, ir a la lista de empresas
-    page.wait_for_selector("li#empresa", state="visible", timeout=10_000)
+    page.wait_for_selector("li#empresa", state="visible", timeout=30_000)
     page.click("li#empresa")
-    page.wait_for_url("**/wEmpresas/**", timeout=15_000)
+    page.wait_for_url("**/wEmpresas/**", timeout=20_000)
     page.wait_for_load_state("networkidle")
-    page.wait_for_selector("tr:has(button.ingresar)", timeout=15_000)
+    page.wait_for_selector("tr:has(button.ingresar)", timeout=20_000)
 
 
 def obtener_empresas(page: Page) -> list[Empresa]:
@@ -106,6 +107,11 @@ def obtener_nominas_empresa(
             return
 
         _status(msg_queue, f"{empresa.nombre} — buscando {periodo} ({idx}/{len(periodos)})")
+        # Si el formulario quedó oculto (ej. tras una búsqueda previa), restaurarlo
+        if page.locator("#mesR0").count() == 0:
+            page.click("span#ver_planillas_pagadas")
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(500)
         año, mes = periodo.split("-")
         page.select_option("#mesR0", label=meses[mes])
         page.select_option("#yearR0", value=año)

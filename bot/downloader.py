@@ -33,9 +33,10 @@ def _navegar_a_planillas_pagadas(page: Page, empresa: Empresa):
 
 def _buscar_planillas(page: Page, periodo: str, nomina: Nomina):
     # Asegura que el formulario de búsqueda esté visible (se oculta tras cada Buscar)
-    page.click("span#ver_planillas_pagadas")
-    page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(500)
+    if page.locator("#mesR0").count() == 0:
+        page.click("span#ver_planillas_pagadas")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(500)
     año, mes = periodo.split("-")
     page.select_option("#mesR0", label=MESES[mes])
     page.select_option("#yearR0", value=año)
