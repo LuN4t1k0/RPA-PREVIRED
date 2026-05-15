@@ -256,8 +256,6 @@ def paso_descargando():
         p = msg.datos["planilla"]
         badge = BADGE.get(p.estado, "•")
         linea = f"{badge} {p.rut_empresa} / {p.periodo} / {p.institucion}"
-        if "download_log" not in st.session_state:
-            st.session_state.download_log = []
         st.session_state.download_log.append(linea)
         st.session_state.planillas.append(p)
         st.rerun()
