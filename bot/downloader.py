@@ -14,12 +14,23 @@ MESES = {
 }
 
 
+def _click_ingresar_empresa(page: Page, empresa: Empresa):
+    """Hace clic en el botón Ingresar de la fila correcta, distinguiendo duplicados por nombre."""
+    filas = page.locator("tr:has(button.ingresar)").filter(
+        has=page.locator(f"td:has-text('{empresa.rut}')")
+    )
+    fila = filas.first
+    for i in range(filas.count()):
+        candidate = filas.nth(i)
+        if candidate.locator("td").nth(2).inner_text().strip() == empresa.nombre:
+            fila = candidate
+            break
+    fila.locator("button.ingresar").click()
+
+
 def _navegar_a_planillas_pagadas(page: Page, empresa: Empresa):
     _ir_a_lista_empresas(page)
-    fila = page.locator("tr:has(button.ingresar)").filter(
-        has=page.locator(f"td:has-text('{empresa.rut}')")
-    ).first
-    fila.locator("button.ingresar").click()
+    _click_ingresar_empresa(page, empresa)
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1000)
     page.click("#tipoPago a:has-text('Remuneraciones')")
@@ -39,10 +50,12 @@ def _buscar_planillas(page: Page, periodo: str, nomina: Nomina):
         page.wait_for_timeout(500)
     año, mes = periodo.split("-")
     page.select_option("#mesR0", label=MESES[mes])
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
     page.select_option("#yearR0", value=año)
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1000)
-    page.locator("select").nth(2).select_option(label=nomina.nombre)
+    page.select_option("#combo_nominas", label=nomina.nombre)
     page.select_option("#combo_tipo_institucion", label="AFP")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(300)
@@ -53,15 +66,51 @@ def _buscar_planillas(page: Page, periodo: str, nomina: Nomina):
 
 
 def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_archivo: str) -> str:
-    # El click abre una pestaña vacía y dispara la descarga; cerramos la pestaña extra.
-    with page.context.expect_page() as blank_info:
-        with page.expect_download() as dl_info:
-            icono_pdf.click()
+    """
+    Maneja dos flujos:
+    - Flujo A: clic → descarga directa en page + pestaña vacía (cerrar y guardar).
+    - Flujo B: clic → popup con radio buttons → seleccionar Total Empresa → Imprimir → descarga en popup.
+    """
+    new_pages: list = []
+    page_handler = lambda p: new_pages.append(p)
+    page.context.on("page", page_handler)
+
+    download = None
     try:
-        blank_info.value.close()
-    except Exception:
-        pass
-    download = dl_info.value
+        try:
+            with page.expect_download(timeout=5000) as dl_info:
+                icono_pdf.click()
+                page.wait_for_timeout(2000)
+            download = dl_info.value
+            # Flujo A: cerrar la pestaña vacía que abrió
+            for p in new_pages:
+                try:
+                    p.close()
+                except Exception:
+                    pass
+        except Exception:
+            # Flujo B: el clic abrió un popup con formulario (sin descarga directa en page)
+            page.wait_for_timeout(1000)
+            if not new_pages:
+                raise Exception("No ocurrió descarga directa ni se abrió popup")
+            popup = new_pages[-1]
+            try:
+                popup.wait_for_load_state("domcontentloaded", timeout=8000)
+            except Exception:
+                pass
+            with popup.expect_download(timeout=15000) as dl_info:
+                radios = popup.locator("input[type='radio']")
+                if radios.count() > 0:
+                    radios.first.click()
+                popup.click("button:has-text('Imprimir')")
+            download = dl_info.value
+            try:
+                popup.close()
+            except Exception:
+                pass
+    finally:
+        page.context.remove_listener("page", page_handler)
+
     ruta = os.path.join(output_dir, nombre_archivo)
     download.save_as(ruta)
     return ruta

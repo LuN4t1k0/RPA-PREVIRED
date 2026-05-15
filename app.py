@@ -153,8 +153,21 @@ def paso_elegir_empresa():
             st.rerun()
         return
 
-    opciones = [f"{e.nombre}  ({e.rut})" for e in empresas]
-    idx = st.selectbox("Empresa", range(len(opciones)), format_func=lambda i: opciones[i])
+    busqueda = st.text_input("🔍 Buscar empresa", placeholder="Nombre o RUT…")
+    if busqueda:
+        q = busqueda.lower()
+        filtradas = [e for e in empresas if q in e.nombre.lower() or q in e.rut.replace(".", "").lower()]
+    else:
+        filtradas = empresas
+
+    if not filtradas:
+        st.warning("Sin resultados para esa búsqueda.")
+        filtradas = empresas
+
+    opciones = [f"{e.nombre}  ({e.rut})" for e in filtradas]
+    if busqueda:
+        st.caption(f"{len(filtradas)} de {len(empresas)} empresas")
+    idx = st.selectbox("Empresa", range(len(opciones)), format_func=lambda i: opciones[i], label_visibility="collapsed")
 
     col1, col2 = st.columns(2)
     desde = col1.text_input("Desde (yyyy-mm)", value=st.session_state.desde, placeholder="2010-01")
@@ -164,7 +177,7 @@ def paso_elegir_empresa():
         if not desde or not hasta:
             st.error("Ingresa el rango de períodos.")
             return
-        st.session_state.empresa_seleccionada = empresas[idx]
+        st.session_state.empresa_seleccionada = filtradas[idx]
         st.session_state.desde = desde
         st.session_state.hasta = hasta
         st.session_state.discovery_done = False
@@ -223,25 +236,29 @@ def paso_seleccion():
     st.caption(f"Empresa: **{empresa.nombre}** ({empresa.rut})")
 
     if not empresa.nominas_por_periodo:
-        st.warning("No se encontraron nóminas en el rango seleccionado.")
-        if st.button("← Volver"):
+        st.warning(
+            f"No se encontraron nóminas AFP para **{empresa.nombre}** "
+            f"entre **{st.session_state.desde}** y **{st.session_state.hasta}**. "
+            "Intenta con un rango de períodos diferente (por ejemplo, años más recientes)."
+        )
+        if st.button("← Cambiar período"):
             st.session_state.paso = 2
             st.session_state.discovery_done = False
             st.rerun()
         return
 
     seleccion = {}
-    for periodo, nominas in sorted(empresa.nominas_por_periodo.items()):
-        st.markdown(f"**{periodo}**")
-        for nomina in nominas:
-            key = (periodo, nomina.slug)
-            checked = st.checkbox(nomina.nombre, value=True, key=str(key))
-            seleccion[key] = checked
+    with st.container(height=480, border=True):
+        for periodo, nominas in sorted(empresa.nominas_por_periodo.items()):
+            st.markdown(f"**{periodo}**")
+            for nomina in nominas:
+                key = (periodo, nomina.slug)
+                checked = st.checkbox(nomina.nombre, value=True, key=str(key))
+                seleccion[key] = checked
 
     st.session_state.seleccion = seleccion
     total = sum(seleccion.values())
 
-    st.divider()
     col1, col2 = st.columns([3, 1])
     col1.caption(f"{total} nóminas seleccionadas")
 

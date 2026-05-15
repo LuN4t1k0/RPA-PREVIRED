@@ -85,9 +85,15 @@ def obtener_nominas_empresa(
     _status(msg_queue, f"Navegando a {empresa.nombre}...")
     _ir_a_lista_empresas(page)
 
-    fila = page.locator("tr:has(button.ingresar)").filter(
+    filas = page.locator("tr:has(button.ingresar)").filter(
         has=page.locator(f"td:has-text('{empresa.rut}')")
-    ).first
+    )
+    fila = filas.first
+    for i in range(filas.count()):
+        candidate = filas.nth(i)
+        if candidate.locator("td").nth(2).inner_text().strip() == empresa.nombre:
+            fila = candidate
+            break
     fila.locator("button.ingresar").click()
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(1000)
@@ -113,12 +119,18 @@ def obtener_nominas_empresa(
             page.wait_for_load_state("networkidle")
             page.wait_for_timeout(500)
         año, mes = periodo.split("-")
-        page.select_option("#mesR0", label=meses[mes])
-        page.select_option("#yearR0", value=año)
+        # Esperar el AJAX de mes antes de cambiar el año para evitar condición de carrera
+        try:
+            page.select_option("#mesR0", label=meses[mes])
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(300)
+            page.select_option("#yearR0", value=año)
+        except Exception:
+            continue  # Año no disponible en el select → sin planillas para este periodo
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1000)
 
-        nomina_select = page.locator("select").nth(2)
+        nomina_select = page.locator("#combo_nominas")
         opciones = nomina_select.locator("option").all_inner_texts()
         nominas = [
             Nomina(nombre=o.strip(), slug=_slug(o.strip()))
