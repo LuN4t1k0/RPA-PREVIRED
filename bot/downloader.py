@@ -65,53 +65,133 @@ def _buscar_planillas(page: Page, periodo: str, nomina: Nomina):
 
 def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_archivo: str) -> str:
     """
-    Maneja dos flujos:
-    - Flujo A: clic → descarga directa en page + pestaña vacía (cerrar y guardar).
-    - Flujo B: clic → popup con radio buttons → seleccionar Total Empresa → Imprimir → descarga en popup.
+    Tres flujos según el tipo de empresa:
+    - Flujo A: clic → descarga directa en page + pestaña vacía.
+    - Flujo B: clic → popup window con radio buttons → Imprimir → descarga en popup.
+    - Flujo C: clic → panel AJAX inline (#bus_cc/modalCC) → radio Total Empresa
+               → button#aceptar_modal → window.open('/wEmpresas/CtrlPdf') → PDF inline
+               (sin evento download). Se captura via page.context.route.
     """
+    ruta = os.path.join(output_dir, nombre_archivo)
+    downloads_main: list = []
     new_pages: list = []
-    page_handler = lambda p: new_pages.append(p)
-    page.context.on("page", page_handler)
+    downloads_new_pages: list = []
 
-    download = None
+    def on_download(dl):
+        downloads_main.append(dl)
+
+    def on_page(p):
+        new_pages.append(p)
+        p.on("download", lambda d: downloads_new_pages.append(d))
+
+    page.on("download", on_download)
+    page.context.on("page", on_page)
+
     try:
-        try:
-            with page.expect_download(timeout=5000) as dl_info:
-                icono_pdf.click()
-                page.wait_for_timeout(2000)
-            download = dl_info.value
-            # Flujo A: cerrar la pestaña vacía que abrió
+        icono_pdf.click()
+        page.wait_for_timeout(3000)
+
+        if downloads_main:
+            # Flujo A: descarga directa en la página principal
+            downloads_main[0].save_as(ruta)
             for p in new_pages:
                 try:
                     p.close()
                 except Exception:
                     pass
-        except Exception:
-            # Flujo B: el clic abrió un popup con formulario (sin descarga directa en page)
-            page.wait_for_timeout(1000)
-            if not new_pages:
-                raise Exception("No ocurrió descarga directa ni se abrió popup")
+            return ruta
+
+        elif new_pages:
+            # Flujo B: popup window con radio buttons (window.open inmediato)
             popup = new_pages[-1]
             try:
                 popup.wait_for_load_state("domcontentloaded", timeout=8000)
             except Exception:
                 pass
-            with popup.expect_download(timeout=15000) as dl_info:
-                radios = popup.locator("input[type='radio']")
-                if radios.count() > 0:
-                    radios.first.click()
-                popup.click("button:has-text('Imprimir')")
-            download = dl_info.value
+            radios = popup.locator("input[type='radio']")
+            if radios.count() > 0:
+                radios.first.click()
+            popup.click("button:has-text('Imprimir')")
+            for _ in range(30):
+                if downloads_new_pages or downloads_main:
+                    break
+                page.wait_for_timeout(500)
+            dl = (downloads_new_pages[0] if downloads_new_pages
+                  else downloads_main[0] if downloads_main else None)
+            if dl is None:
+                raise Exception("Flujo B: sin descarga tras Imprimir en popup")
+            dl.save_as(ruta)
             try:
                 popup.close()
             except Exception:
                 pass
-    finally:
-        page.context.remove_listener("page", page_handler)
+            return ruta
 
-    ruta = os.path.join(output_dir, nombre_archivo)
-    download.save_as(ruta)
-    return ruta
+        else:
+            # Flujo C: panel AJAX inline — PDF servido inline en nueva ventana (sin download event)
+            panel_btn = page.locator("button#aceptar_modal")
+            if panel_btn.count() == 0 or not panel_btn.first.is_visible():
+                raise Exception("No se detectó descarga, popup ni panel #aceptar_modal")
+
+            pdf_bytes_list: list = []
+
+            def capture_pdf(route, request):
+                if request.method == "GET":
+                    try:
+                        resp = route.fetch(timeout=30_000)
+                        body = resp.body()
+                        if body:
+                            pdf_bytes_list.append(body)
+                        try:
+                            route.fulfill(response=resp)
+                        except Exception:
+                            pass
+                    except Exception:
+                        try:
+                            route.continue_()
+                        except Exception:
+                            pass
+                else:
+                    try:
+                        route.continue_()
+                    except Exception:
+                        pass
+
+            page.context.route("**/CtrlPdf**", capture_pdf)
+            try:
+                total_empresa = page.locator("input[name='web_tipo_busqueda'][value='0']")
+                if total_empresa.count() > 0:
+                    try:
+                        total_empresa.first.click()
+                    except Exception:
+                        pass
+                panel_btn.first.click()
+                # Esperar hasta 15s: AJAX POST + window.open + navegación + respuesta PDF
+                for _ in range(30):
+                    if pdf_bytes_list:
+                        break
+                    page.wait_for_timeout(500)
+            finally:
+                page.context.unroute("**/CtrlPdf**", capture_pdf)
+
+            for p in new_pages:
+                try:
+                    p.close()
+                except Exception:
+                    pass
+
+            if not pdf_bytes_list:
+                raise Exception("Flujo C: sin PDF capturado tras aceptar_modal")
+
+            with open(ruta, "wb") as f:
+                f.write(pdf_bytes_list[0])
+            return ruta
+
+    finally:
+        page.remove_listener("download", on_download)
+        page.context.remove_listener("page", on_page)
+
+    raise Exception("Sin descarga capturada")
 
 
 def descargar_empresa(
