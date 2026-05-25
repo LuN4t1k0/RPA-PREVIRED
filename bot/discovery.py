@@ -24,6 +24,29 @@ def _slug(nombre: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", nombre.upper()).strip("_")
 
 
+# Palabras clave que identifican nóminas que NO son AFP
+# (ISAPRE, CCAF, Mutuales, FONASA/IPS, etc.)
+_NO_AFP_KEYWORDS = frozenset([
+    "isap",        # ISAPRE, Isape, Isapre Consalud…
+    "consalud",    # Consalud
+    "banmedic",    # Banmédica
+    "colmena",     # Colmena Golden Cross
+    "fonasa",      # FONASA
+    " ips",        # IPS (con espacio para no capturar "Imposiciones")
+    "ccaf",        # Cajas de Compensación
+    "mutual",      # Mutuales (IST, ACHS, etc.)
+    "vida tres",   # Vida Tres
+    "masvida",     # Masvida
+    "cruz blanca", # Cruz Blanca
+])
+
+
+def _es_nomina_afp(nombre: str) -> bool:
+    """Devuelve True si el nombre de la nómina corresponde a AFP (no ISAPRE/CCAF/etc.)."""
+    n = nombre.lower()
+    return not any(kw in n for kw in _NO_AFP_KEYWORDS)
+
+
 def _status(msg_queue: queue.Queue, texto: str):
     msg_queue.put(BotMessage(tipo="status", datos={"msg": texto}))
 
@@ -144,7 +167,7 @@ def obtener_nominas_empresa(
         nominas = [
             Nomina(nombre=o.strip(), slug=_slug(o.strip()))
             for o in opciones
-            if o.strip() and "seleccione" not in o.lower()
+            if o.strip() and "seleccione" not in o.lower() and _es_nomina_afp(o.strip())
         ]
 
         if nominas:
