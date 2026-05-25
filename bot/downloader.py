@@ -42,10 +42,23 @@ def _navegar_a_planillas_pagadas(page: Page, empresa: Empresa):
 
 
 def _buscar_planillas(page: Page, periodo: str, nomina: Nomina):
-    # Asegura que el formulario de búsqueda esté visible (se oculta tras cada Buscar)
+    # Asegura que el formulario esté en estado limpio:
+    # - caso normal: #mesR0 oculto → abrirlo
+    # - caso roto (ISAPRE+AFP): #mesR0 visible pero botón Buscar desapareció
+    #   → cerrar el panel (toggle) y volver a abrirlo para resetearlo
     if page.locator("#mesR0").count() == 0:
         _abrir_planillas_pagadas(page)
         page.wait_for_timeout(500)
+    elif page.locator("button:has-text('Buscar')").count() == 0:
+        # Formulario visible pero roto: ocultar pulsando el toggle y reabrir
+        try:
+            page.locator("span#ver_planillas_pagadas").click(timeout=3_000)
+            page.wait_for_timeout(300)
+        except Exception:
+            pass
+        _abrir_planillas_pagadas(page)
+        page.wait_for_timeout(500)
+
     año, mes = periodo.split("-")
     page.select_option("#mesR0", label=MESES[mes])
     page.wait_for_load_state("networkidle")
@@ -57,7 +70,12 @@ def _buscar_planillas(page: Page, periodo: str, nomina: Nomina):
     page.select_option("#combo_tipo_institucion", label="AFP")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(300)
-    page.select_option("#combo_instituciones", label="Todas las Instituciones")
+    # "Todas las Instituciones" puede no existir si el combo ya filtró por AFP
+    opciones_inst = page.locator("#combo_instituciones option").all_inner_texts()
+    if any("todas" in o.lower() for o in opciones_inst):
+        page.select_option("#combo_instituciones", label=next(
+            o for o in opciones_inst if "todas" in o.lower()
+        ))
     page.click("button:has-text('Buscar')")
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(500)
