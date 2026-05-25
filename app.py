@@ -274,6 +274,122 @@ def paso_seleccion():
         st.rerun()
 
 
+# ── Timeline renderer ─────────────────────────────────────────────────────────
+_TL_CSS = """
+<style>
+@keyframes tl-spin{to{transform:rotate(360deg)}}
+@keyframes tl-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.tl-wrap{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;
+         max-height:460px;overflow-y:auto;padding:4px 0}
+.tl-row{display:flex;align-items:flex-start;gap:10px;padding:4px 0;
+        border-bottom:1px solid #f3f4f6}
+.tl-row:last-child{border:none}
+.tl-dot{width:13px;height:13px;border-radius:50%;flex-shrink:0;margin-top:2px}
+.dot-ok{background:#22c55e}.dot-err{background:#ef4444}
+.dot-warn{background:#f59e0b}.dot-skip{background:#d1d5db}
+.dot-pending{background:#fff;border:2px solid #d1d5db}
+.tl-spinner{width:13px;height:13px;border-radius:50%;flex-shrink:0;margin-top:2px;
+            border:2.5px solid #ede9fe;border-top-color:#7B2FBE;
+            animation:tl-spin .7s linear infinite}
+.tl-text{flex:1;min-width:0;line-height:1.4}
+.txt-ok{color:#15803d}.txt-err{color:#dc2626}.txt-warn{color:#92400e}
+.txt-skip{color:#6b7280}.txt-active{color:#7B2FBE;font-weight:600}
+.txt-pending{color:#9ca3af}
+.tl-kb{font-size:11px;color:#9ca3af;margin-left:6px}
+.tl-sub{font-size:11px;color:#7B2FBE;animation:tl-pulse 1.5s ease-in-out infinite}
+.tl-sep{height:1px;background:#e5e7eb;margin:6px 0}
+.tl-prog-wrap{background:#f1f5f9;border-radius:4px;height:6px;margin:10px 0 6px}
+.tl-prog-fill{background:linear-gradient(90deg,#7B2FBE,#a855f7);
+              height:6px;border-radius:4px}
+.tl-chip{display:inline-block;background:#f3e8ff;border:1px solid #d6bcfa;
+         border-radius:20px;padding:2px 10px;font-size:12px;color:#6b21a8;
+         font-weight:600;float:right;margin-top:-4px}
+</style>
+"""
+
+_ESTADO_DOT  = {"OK": "dot-ok", "ERROR": "dot-err", "SIN_DATOS": "dot-warn", "OMITIDO": "dot-skip"}
+_ESTADO_TXT  = {"OK": "txt-ok", "ERROR": "txt-err", "SIN_DATOS": "txt-warn", "OMITIDO": "txt-skip"}
+_ESTADO_ICON = {"OK": "✅", "ERROR": "❌", "SIN_DATOS": "⚠️", "OMITIDO": "⏭️"}
+
+
+def _render_timeline(
+    plan: list,
+    pending: list,
+    done: list,
+    current: dict | None,
+) -> str:
+    """Genera el HTML del timeline de descarga.
+
+    plan    — [(periodo, nomina_nombre), ...] plan completo
+    pending — [(periodo, nomina_nombre), ...] ítems aún no iniciados
+    done    — [{"inst","periodo","nomina","estado","kb"}, ...] completados
+    current — {"periodo","nomina","sub"} | None ítem activo
+    """
+    parts = [_TL_CSS]
+
+    # Chip de progreso y barra
+    total = len(plan)
+    completados = total - len(pending) - (1 if current else 0)
+    completados = max(0, completados)
+    pct = int(completados / total * 100) if total else 0
+    parts.append(
+        f'<div class="tl-chip">{completados} / {total} nóminas</div>'
+        f'<div class="tl-prog-wrap">'
+        f'<div class="tl-prog-fill" style="width:{pct}%"></div></div>'
+    )
+
+    # Sección de completados (máx 60 ítems)
+    parts.append('<div class="tl-wrap">')
+    for item in done[-60:]:
+        estado = item["estado"]
+        dot  = _ESTADO_DOT.get(estado, "dot-skip")
+        txt  = _ESTADO_TXT.get(estado, "txt-skip")
+        icon = _ESTADO_ICON.get(estado, "•")
+        kb   = f'<span class="tl-kb">{item["kb"]} KB</span>' if item.get("kb") else ""
+        parts.append(
+            f'<div class="tl-row">'
+            f'<div class="tl-dot {dot}"></div>'
+            f'<div class="tl-text">'
+            f'<span class="{txt}">{icon} {item.get("periodo","")} / {item.get("inst","")}</span>'
+            f'{kb}</div></div>'
+        )
+
+    # Ítem activo
+    if current:
+        parts.append('<div class="tl-sep"></div>')
+        sub = f'<div class="tl-sub">{current["sub"]}</div>' if current.get("sub") else ""
+        parts.append(
+            f'<div class="tl-row">'
+            f'<div class="tl-spinner"></div>'
+            f'<div class="tl-text">'
+            f'<span class="txt-active">{current["periodo"]} / {current["nomina"]}…</span>'
+            f'{sub}</div></div>'
+        )
+
+    # Pendientes
+    if pending:
+        parts.append('<div class="tl-sep"></div>')
+        for per, nom in pending[:4]:
+            parts.append(
+                f'<div class="tl-row">'
+                f'<div class="tl-dot dot-pending"></div>'
+                f'<div class="tl-text">'
+                f'<span class="txt-pending">{per} / {nom}</span></div></div>'
+            )
+        restantes = len(pending) - 4
+        if restantes > 0:
+            parts.append(
+                f'<div class="tl-row" style="opacity:.5">'
+                f'<div class="tl-dot dot-pending"></div>'
+                f'<div class="tl-text">'
+                f'<span class="txt-pending">+ {restantes} más pendientes…</span>'
+                f'</div></div>'
+            )
+
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
 # ── PASO 4: Descargando ───────────────────────────────────────────────────────
 def _ir_a_paso5_con_lo_descargado(motivo: str | None = None):
     """Construye el ZIP con lo que hay en tmpdir y avanza al paso 5."""
