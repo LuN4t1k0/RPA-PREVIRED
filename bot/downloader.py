@@ -80,6 +80,19 @@ def _buscar_planillas(page: Page, periodo: str, nomina: Nomina):
     page.wait_for_load_state("networkidle")
     page.wait_for_timeout(500)
 
+    # Auto-sanity: si el formulario quedó visible pero sin botón Buscar,
+    # es señal de que esta nómina no tiene datos AFP (nómina ISAPRE u otro tipo).
+    # Reseteamos el formulario aquí mismo para que la próxima búsqueda parta limpia.
+    if (page.locator("#mesR0").count() > 0
+            and page.locator("button:has-text('Buscar')").count() == 0):
+        try:
+            page.locator("span#ver_planillas_pagadas").click(timeout=3_000)
+            page.wait_for_timeout(300)
+        except Exception:
+            pass
+        _abrir_planillas_pagadas(page)
+        page.wait_for_timeout(500)
+
 
 def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_archivo: str) -> str:
     """
