@@ -1,6 +1,6 @@
 # Paso 4 Timeline UI — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Reemplazar el log de texto plano del paso 4 por un timeline interactivo con spinner animado, ítems pendientes en gris y chip de progreso "X / Y".
 
@@ -25,7 +25,7 @@
 **Files:**
 - Modify: `models.py:27-36`
 
-- [ ] **Step 1: Añadir el campo**
+- [x] **Step 1: Añadir el campo**
 
 Reemplazar en `models.py`:
 
@@ -43,7 +43,7 @@ class Planilla:
     tamaño_bytes: int = 0
 ```
 
-- [ ] **Step 2: Verificar que no rompe nada**
+- [x] **Step 2: Verificar que no rompe nada**
 
 ```bash
 cd /ruta/al/proyecto
@@ -52,7 +52,7 @@ cd /ruta/al/proyecto
 
 Salida esperada: `0`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add models.py
@@ -66,7 +66,7 @@ git commit -m "feat: add tamaño_bytes field to Planilla dataclass"
 **Files:**
 - Modify: `bot/downloader.py:274-365`
 
-- [ ] **Step 1: Añadir mensaje `plan` al inicio de descargar_empresa**
+- [x] **Step 1: Añadir mensaje `plan` al inicio de descargar_empresa**
 
 En `bot/downloader.py`, reemplazar la función `descargar_empresa` completa:
 
@@ -178,7 +178,7 @@ def descargar_empresa(
                 msg_queue.put(BotMessage(tipo="planilla", datos={"planilla": planilla}))
 ```
 
-- [ ] **Step 2: Verificar sintaxis**
+- [x] **Step 2: Verificar sintaxis**
 
 ```bash
 .venv/bin/python3 -c "import bot.downloader; print('OK')"
@@ -186,7 +186,7 @@ def descargar_empresa(
 
 Salida esperada: `OK`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add bot/downloader.py
@@ -200,7 +200,7 @@ git commit -m "feat: emit plan/inicio_item messages and populate tamaño_bytes"
 **Files:**
 - Modify: `app.py` — añadir función antes de `paso_descargando()`
 
-- [ ] **Step 1: Insertar la función `_render_timeline` en app.py**
+- [x] **Step 1: Insertar la función `_render_timeline` en app.py**
 
 Añadir justo antes de la línea `# ── PASO 4: Descargando`:
 
@@ -316,7 +316,7 @@ def _render_timeline(
     return "\n".join(parts)
 ```
 
-- [ ] **Step 2: Verificar sintaxis**
+- [x] **Step 2: Verificar sintaxis**
 
 ```bash
 .venv/bin/python3 -c "import app; print('OK')"
@@ -324,7 +324,7 @@ def _render_timeline(
 
 Salida esperada: `OK`
 
-- [ ] **Step 3: Verificar que _render_timeline produce HTML válido**
+- [x] **Step 3: Verificar que _render_timeline produce HTML válido**
 
 ```bash
 .venv/bin/python3 - <<'EOF'
@@ -347,7 +347,7 @@ EOF
 
 Salida esperada: `OK — HTML generado correctamente`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app.py
@@ -361,7 +361,7 @@ git commit -m "feat: add _render_timeline() HTML timeline component"
 **Files:**
 - Modify: `app.py`
 
-- [ ] **Step 1: Actualizar defaults de session_state**
+- [x] **Step 1: Actualizar defaults de session_state**
 
 En `app.py`, en el dict de inicialización (bloque `for key, default in {...}.items():`), reemplazar:
 
@@ -380,7 +380,7 @@ Por:
     "download_log_final_error": None,
 ```
 
-- [ ] **Step 2: Actualizar _ir_a_paso5_con_lo_descargado**
+- [x] **Step 2: Actualizar _ir_a_paso5_con_lo_descargado**
 
 Reemplazar la función existente:
 
@@ -399,7 +399,7 @@ def _ir_a_paso5_con_lo_descargado(motivo: str | None = None):
     st.rerun()
 ```
 
-- [ ] **Step 3: Reemplazar el cuerpo de paso_descargando()**
+- [x] **Step 3: Reemplazar el cuerpo de paso_descargando()**
 
 Reemplazar la función `paso_descargando()` completa:
 
@@ -494,7 +494,7 @@ def paso_descargando():
         _ir_a_paso5_con_lo_descargado(msg.datos.get("msg", "Error desconocido"))
 ```
 
-- [ ] **Step 4: Verificar sintaxis**
+- [x] **Step 4: Verificar sintaxis**
 
 ```bash
 .venv/bin/python3 -c "import app; print('OK')"
@@ -502,7 +502,7 @@ def paso_descargando():
 
 Salida esperada: `OK`
 
-- [ ] **Step 5: Smoke test manual**
+- [x] **Step 5: Smoke test manual**
 
 ```bash
 .venv/bin/streamlit run app.py --server.port=8502
@@ -515,14 +515,14 @@ Abrir http://localhost:8502, ingresar con las credenciales de prueba, selecciona
 - Los pendientes aparecen en gris debajo del spinner
 - El botón "Detener" sigue funcionando y lleva al paso 5
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app.py
 git commit -m "feat: replace download log with animated timeline in paso 4"
 ```
 
-- [ ] **Step 7: Push a Railway**
+- [x] **Step 7: Push a Railway**
 
 ```bash
 git push
