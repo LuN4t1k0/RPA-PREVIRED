@@ -185,6 +185,19 @@ def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_ar
 
             with open(ruta, "wb") as f:
                 f.write(pdf_bytes_list[0])
+
+            # Flujo C deja el panel #bus_cc visible, lo que puede bloquear "Buscar"
+            # en la siguiente iteración. Lo ocultamos via JS como lo haría el portal.
+            try:
+                page.evaluate("""
+                    var panel = document.getElementById('bus_cc');
+                    if (panel) panel.style.display = 'none';
+                    var modal = document.getElementById('modalCC');
+                    if (modal) modal.style.display = 'none';
+                """)
+            except Exception:
+                pass
+
             return ruta
 
     finally:
@@ -192,6 +205,39 @@ def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_ar
         page.context.remove_listener("page", on_page)
 
     raise Exception("Sin descarga capturada")
+
+
+def _recuperar_pagina(page: Page, empresa: Empresa):
+    """
+    Intenta restaurar la página al formulario de búsqueda de Planillas Pagadas.
+    Cierra ventanas huérfanas y re-navega si es necesario.
+    """
+    # Cerrar cualquier ventana/pestaña extra que haya quedado abierta
+    for ctx_page in page.context.pages:
+        if ctx_page != page:
+            try:
+                ctx_page.close()
+            except Exception:
+                pass
+
+    # Si ya estamos en el formulario, listo
+    try:
+        if page.locator("#mesR0").count() > 0:
+            return
+    except Exception:
+        pass
+
+    # Intentar abrir Planillas Pagadas desde el estado actual
+    try:
+        _abrir_planillas_pagadas(page)
+        page.wait_for_timeout(500)
+        if page.locator("#mesR0").count() > 0:
+            return
+    except Exception:
+        pass
+
+    # Último recurso: navegar de nuevo desde la lista de empresas
+    _navegar_a_planillas_pagadas(page, empresa)
 
 
 def descargar_empresa(
@@ -209,7 +255,25 @@ def descargar_empresa(
             if stop_event.is_set():
                 return
 
-            _buscar_planillas(page, periodo, nomina)
+            # Intentar la búsqueda; si falla, recuperar la página y reintentar una vez
+            try:
+                _buscar_planillas(page, periodo, nomina)
+            except Exception as e_buscar:
+                msg_queue.put(BotMessage(tipo="status", datos={
+                    "msg": f"⚠️ Error buscando {periodo}/{nomina.nombre}: {e_buscar}. Recuperando…"
+                }))
+                try:
+                    _recuperar_pagina(page, empresa)
+                    _buscar_planillas(page, periodo, nomina)
+                except Exception as e_retry:
+                    # Marcar todas las instituciones del período como error y continuar
+                    planilla = Planilla(
+                        rut_empresa=empresa.rut, periodo=periodo, nomina=nomina.slug,
+                        institucion="AFP", folio="", estado=Estado.ERROR,
+                        error_msg=f"Buscar falló tras recuperación: {e_retry}",
+                    )
+                    msg_queue.put(BotMessage(tipo="planilla", datos={"planilla": planilla}))
+                    continue
 
             sin_datos = page.locator("text=No se encontraron planillas").count()
             if sin_datos > 0:
