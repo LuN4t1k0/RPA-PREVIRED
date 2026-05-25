@@ -32,6 +32,7 @@ for key, default in {
     "zip_buffer": None,
     "discovery_status": "",
     "download_log": [],
+    "download_log_final_error": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -274,6 +275,17 @@ def paso_seleccion():
 
 
 # ── PASO 4: Descargando ───────────────────────────────────────────────────────
+def _ir_a_paso5_con_lo_descargado(motivo: str | None = None):
+    """Construye el ZIP con lo que hay en tmpdir y avanza al paso 5."""
+    if motivo:
+        st.session_state.download_log_final_error = motivo
+    st.session_state.zip_buffer = construir_zip(st.session_state.tmpdir)
+    st.session_state.download_log = []
+    st.session_state.task_running = False
+    st.session_state.paso = 5
+    st.rerun()
+
+
 def paso_descargando():
     _barra_pasos(4)
     st.title("⬇️ Descargando planillas...")
@@ -295,9 +307,24 @@ def paso_descargando():
         session.submit(tarea_descarga)
         st.session_state.task_running = True
 
+    # ── Log de progreso ───────────────────────────────────────────────────────
     log_lines = st.session_state.get("download_log", [])
     if log_lines:
-        st.code("\n".join(log_lines[-20:]), language=None)
+        with st.container(height=400, border=True):
+            for line in log_lines:
+                st.markdown(line)
+
+    # ── Botón de parada manual ────────────────────────────────────────────────
+    if st.button("⏹ Detener y descargar lo que tengo", use_container_width=True):
+        if st.session_state.stop_event:
+            st.session_state.stop_event.set()
+        _ir_a_paso5_con_lo_descargado()
+        return
+
+    # ── Detectar hilo muerto (crash inesperado sin error_fatal) ───────────────
+    if not session.is_alive():
+        _ir_a_paso5_con_lo_descargado("El proceso del bot terminó inesperadamente.")
+        return
 
     BADGE = {"OK": "✅", "SIN_DATOS": "⚠️", "ERROR": "❌", "OMITIDO": "⏭️"}
 
@@ -311,21 +338,27 @@ def paso_descargando():
         st.session_state.download_log.append(f"{badge} {p.periodo} / {p.institucion}")
         st.session_state.planillas.append(p)
         st.rerun()
-    elif msg.tipo == "fin_descarga":
-        st.session_state.task_running = False
-        st.session_state.zip_buffer = construir_zip(st.session_state.tmpdir)
-        st.session_state.download_log = []
-        st.session_state.paso = 5
+    elif msg.tipo == "status":
+        # Mensajes de recuperación o progreso del bot
+        st.session_state.download_log.append(f"ℹ️ {msg.datos.get('msg', '')}")
         st.rerun()
+    elif msg.tipo == "fin_descarga":
+        _ir_a_paso5_con_lo_descargado()
     elif msg.tipo == "error_fatal":
-        st.error(f"Error fatal: {msg.datos.get('msg')}")
-        st.session_state.task_running = False
+        # Error grave: ir al paso 5 con lo que hay y mostrar el error allí
+        _ir_a_paso5_con_lo_descargado(msg.datos.get("msg", "Error desconocido"))
 
 
 # ── PASO 5: Listo ─────────────────────────────────────────────────────────────
 def paso_listo():
     _barra_pasos(5)
-    st.title("🎉 ¡Descarga completa!")
+
+    error_final = st.session_state.pop("download_log_final_error", None)
+    if error_final:
+        st.warning(f"⚠️ La descarga se interrumpió:\n\n{error_final}")
+        st.title("📦 Planillas descargadas hasta aquí")
+    else:
+        st.title("🎉 ¡Descarga completa!")
 
     planillas = st.session_state.planillas
     ok = sum(1 for p in planillas if p.estado == Estado.OK)
