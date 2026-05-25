@@ -31,7 +31,10 @@ for key, default in {
     "tmpdir": None,
     "zip_buffer": None,
     "discovery_status": "",
-    "download_log": [],
+    "timeline_plan": [],
+    "timeline_pending": [],
+    "timeline_done": [],
+    "timeline_current": None,
     "download_log_final_error": None,
 }.items():
     if key not in st.session_state:
@@ -396,7 +399,10 @@ def _ir_a_paso5_con_lo_descargado(motivo: str | None = None):
     if motivo:
         st.session_state.download_log_final_error = motivo
     st.session_state.zip_buffer = construir_zip(st.session_state.tmpdir)
-    st.session_state.download_log = []
+    st.session_state.timeline_plan = []
+    st.session_state.timeline_pending = []
+    st.session_state.timeline_done = []
+    st.session_state.timeline_current = None
     st.session_state.task_running = False
     st.session_state.paso = 5
     st.rerun()
@@ -404,7 +410,7 @@ def _ir_a_paso5_con_lo_descargado(motivo: str | None = None):
 
 def paso_descargando():
     _barra_pasos(4)
-    st.title("⬇️ Descargando planillas...")
+    st.title("⬇️ Descargando planillas…")
     session: PlaywrightSession = st.session_state.session
 
     if not st.session_state.task_running:
@@ -423,12 +429,14 @@ def paso_descargando():
         session.submit(tarea_descarga)
         st.session_state.task_running = True
 
-    # ── Log de progreso ───────────────────────────────────────────────────────
-    log_lines = st.session_state.get("download_log", [])
-    if log_lines:
-        with st.container(height=400, border=True):
-            for line in log_lines:
-                st.markdown(line)
+    # ── Timeline ──────────────────────────────────────────────────────────────
+    html = _render_timeline(
+        st.session_state.get("timeline_plan", []),
+        st.session_state.get("timeline_pending", []),
+        st.session_state.get("timeline_done", []),
+        st.session_state.get("timeline_current"),
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
     # ── Botón de parada manual ────────────────────────────────────────────────
     if st.button("⏹ Detener y descargar lo que tengo", use_container_width=True):
@@ -442,26 +450,50 @@ def paso_descargando():
         _ir_a_paso5_con_lo_descargado("El proceso del bot terminó inesperadamente.")
         return
 
-    BADGE = {"OK": "✅", "SIN_DATOS": "⚠️", "ERROR": "❌", "OMITIDO": "⏭️"}
-
+    # ── Leer siguiente mensaje ────────────────────────────────────────────────
     msg = _poll(session)
     if msg is None:
         return
 
-    if msg.tipo == "planilla":
+    if msg.tipo == "plan":
+        items = [tuple(i) for i in msg.datos.get("items", [])]
+        st.session_state.timeline_plan = items
+        st.session_state.timeline_pending = list(items)
+        st.rerun()
+
+    elif msg.tipo == "inicio_item":
+        periodo = msg.datos.get("periodo", "")
+        nomina  = msg.datos.get("nomina", "")
+        st.session_state.timeline_pending = [
+            (p, n) for p, n in st.session_state.get("timeline_pending", [])
+            if not (p == periodo and n == nomina)
+        ]
+        st.session_state.timeline_current = {"periodo": periodo, "nomina": nomina, "sub": ""}
+        st.rerun()
+
+    elif msg.tipo == "status":
+        current = st.session_state.get("timeline_current") or {}
+        current["sub"] = msg.datos.get("msg", "")
+        st.session_state.timeline_current = current
+        st.rerun()
+
+    elif msg.tipo == "planilla":
         p = msg.datos["planilla"]
-        badge = BADGE.get(p.estado, "•")
-        st.session_state.download_log.append(f"{badge} {p.periodo} / {p.institucion}")
+        kb = round(p.tamaño_bytes / 1024) if p.tamaño_bytes else 0
+        st.session_state.timeline_done.append({
+            "periodo": p.periodo,
+            "nomina":  p.nomina,
+            "inst":    p.institucion,
+            "estado":  p.estado,
+            "kb":      kb,
+        })
         st.session_state.planillas.append(p)
         st.rerun()
-    elif msg.tipo == "status":
-        # Mensajes de recuperación o progreso del bot
-        st.session_state.download_log.append(f"ℹ️ {msg.datos.get('msg', '')}")
-        st.rerun()
+
     elif msg.tipo == "fin_descarga":
         _ir_a_paso5_con_lo_descargado()
+
     elif msg.tipo == "error_fatal":
-        # Error grave: ir al paso 5 con lo que hay y mostrar el error allí
         _ir_a_paso5_con_lo_descargado(msg.datos.get("msg", "Error desconocido"))
 
 
