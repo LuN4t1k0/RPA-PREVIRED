@@ -33,6 +33,7 @@ class Planilla:
     estado: Estado
     ruta_archivo: Optional[str] = None
     error_msg: Optional[str] = None
+    tamaño_bytes: int = 0
 
 
 @dataclass
