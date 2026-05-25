@@ -281,10 +281,24 @@ def descargar_empresa(
 ):
     _navegar_a_planillas_pagadas(page, empresa)
 
+    # Enviar plan completo para que la UI muestre ítems pendientes
+    plan_items = [
+        (periodo, nomina.nombre)
+        for periodo, nominas in empresa.nominas_por_periodo.items()
+        for nomina in nominas
+    ]
+    msg_queue.put(BotMessage(tipo="plan", datos={"items": plan_items}))
+
     for periodo, nominas in empresa.nominas_por_periodo.items():
         for nomina in nominas:
             if stop_event.is_set():
                 return
+
+            # Avisar qué nómina se está procesando ahora
+            msg_queue.put(BotMessage(tipo="inicio_item", datos={
+                "periodo": periodo,
+                "nomina": nomina.nombre,
+            }))
 
             # Intentar la búsqueda; si falla, recuperar la página y reintentar una vez
             try:
@@ -297,7 +311,6 @@ def descargar_empresa(
                     _recuperar_pagina(page, empresa)
                     _buscar_planillas(page, periodo, nomina)
                 except Exception as e_retry:
-                    # Marcar todas las instituciones del período como error y continuar
                     planilla = Planilla(
                         rut_empresa=empresa.rut, periodo=periodo, nomina=nomina.slug,
                         institucion="AFP", folio="", estado=Estado.ERROR,
@@ -353,6 +366,7 @@ def descargar_empresa(
                         rut_empresa=empresa.rut, periodo=periodo, nomina=nomina.slug,
                         institucion=nombre_inst, folio=folio, estado=Estado.OK,
                         ruta_archivo=ruta,
+                        tamaño_bytes=os.path.getsize(ruta),
                     )
                     checkpoint.marcar(planilla)
                 except Exception as e:
