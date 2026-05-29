@@ -30,30 +30,33 @@ def install_python(on_status=None) -> None:
 
     if on_status:
         on_status("Descargando Python...")
-    zip_path = BASE_DIR / "python_embed.zip"
-    urllib.request.urlretrieve(_PYTHON_URL, zip_path)
+    zip_path = BASE_DIR / f"python_embed_{os.getpid()}.zip"
+    get_pip = BASE_DIR / f"get-pip_{os.getpid()}.py"
 
-    if on_status:
-        on_status("Instalando Python...")
-    PYTHON_DIR.mkdir(exist_ok=True)
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(PYTHON_DIR)
-    zip_path.unlink()
+    try:
+        urllib.request.urlretrieve(_PYTHON_URL, zip_path)
 
-    pth_file = PYTHON_DIR / "python312._pth"
-    text = pth_file.read_text()
-    pth_file.write_text(text.replace("#import site", "import site"))
+        if on_status:
+            on_status("Instalando Python...")
+        PYTHON_DIR.mkdir(exist_ok=True)
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(PYTHON_DIR)
 
-    if on_status:
-        on_status("Instalando pip...")
-    get_pip = BASE_DIR / "get-pip.py"
-    urllib.request.urlretrieve(_GET_PIP_URL, get_pip)
-    subprocess.run(
-        [str(PYTHON_DIR / "python.exe"), str(get_pip)],
-        check=True,
-        creationflags=_NO_WINDOW,
-    )
-    get_pip.unlink()
+        pth_file = PYTHON_DIR / "python312._pth"
+        text = pth_file.read_text()
+        pth_file.write_text(text.replace("#import site", "import site"))
+
+        if on_status:
+            on_status("Instalando pip...")
+        urllib.request.urlretrieve(_GET_PIP_URL, get_pip)
+        subprocess.run(
+            [str(PYTHON_DIR / "python.exe"), str(get_pip)],
+            check=True,
+            creationflags=_NO_WINDOW,
+        )
+    finally:
+        zip_path.unlink(missing_ok=True)
+        get_pip.unlink(missing_ok=True)
 
 
 def install_playwright(on_status=None) -> None:

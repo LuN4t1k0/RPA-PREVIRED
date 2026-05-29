@@ -1,16 +1,39 @@
 import queue
+import socket
 import subprocess
 import threading
 import tkinter as tk
+from tkinter import messagebox
 from tkinter import ttk
 
 import runner
 import setup
 import updater
 
+_LOCK_PORT = 48501
+
+
+def acquire_single_instance_lock() -> socket.socket | None:
+    lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        lock.bind(("127.0.0.1", _LOCK_PORT))
+        lock.listen(1)
+        return lock
+    except OSError:
+        lock.close()
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo(
+            "Previred Downloader",
+            "Previred Downloader ya se esta ejecutando. Espera a que termine la instalacion.",
+        )
+        root.destroy()
+        return None
+
 
 class LauncherWindow:
-    def __init__(self):
+    def __init__(self, instance_lock: socket.socket):
+        self._instance_lock = instance_lock
         self._proc: subprocess.Popen | None = None
         self._q: queue.Queue = queue.Queue()
 
@@ -87,8 +110,11 @@ class LauncherWindow:
     def _on_close(self):
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
+        self._instance_lock.close()
         self.root.destroy()
 
 
 if __name__ == "__main__":
-    LauncherWindow()
+    instance_lock = acquire_single_instance_lock()
+    if instance_lock:
+        LauncherWindow(instance_lock)
