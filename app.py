@@ -1,7 +1,12 @@
+import json
+import os
 import queue
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
+
 import streamlit as st
 
 from bot.login import abrir_sesion
@@ -14,8 +19,8 @@ from zip_builder import construir_zip
 
 st.set_page_config(page_title="Previred Downloader", page_icon="📄", layout="centered")
 
-# URL del ejecutable Windows publicado por el workflow del launcher.
-_DOWNLOAD_URL = "https://github.com/LuN4t1k0/RPA-PREVIRED/releases/download/launcher-latest/PreviredDownloader.exe"
+_RELEASE_API_URL = "https://api.github.com/repos/LuN4t1k0/RPA-PREVIRED/releases/tags/launcher-latest"
+_LAUNCHER_ASSET_NAME = "PreviredDownloader.exe"
 
 # ── Inicialización de estado ──────────────────────────────────────────────────
 for key, default in {
@@ -39,9 +44,56 @@ for key, default in {
     "timeline_done": [],
     "timeline_current": None,
     "download_log_final_error": None,
+    "launcher_exe": None,
+    "launcher_download_error": "",
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
+
+
+def _get_launcher_token() -> str:
+    token = os.environ.get("LAUNCHER_GITHUB_TOKEN", "")
+    if token:
+        return token
+
+    try:
+        return st.secrets.get("LAUNCHER_GITHUB_TOKEN", "")
+    except Exception:
+        return ""
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_launcher_exe(token: str) -> bytes:
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    try:
+        req = urllib.request.Request(_RELEASE_API_URL, headers=headers)
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            release = json.loads(resp.read().decode("utf-8"))
+
+        asset = next(
+            (item for item in release.get("assets", []) if item.get("name") == _LAUNCHER_ASSET_NAME),
+            None,
+        )
+        if not asset:
+            raise RuntimeError("No se encontro el ejecutable en GitHub Releases.")
+
+        download_headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/octet-stream",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        req = urllib.request.Request(asset["url"], headers=download_headers)
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"GitHub rechazo la descarga ({exc.code}).") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError("No se pudo conectar con GitHub para descargar el ejecutable.") from exc
 
 
 def _barra_pasos(actual: int):
@@ -90,21 +142,33 @@ def paso_descarga():
 
     with col_cta:
         st.markdown("#### Descarga")
-        if _DOWNLOAD_URL:
-            st.link_button(
+        if st.session_state.launcher_exe:
+            st.download_button(
                 "⬇  Descargar para Windows",
-                _DOWNLOAD_URL,
+                data=st.session_state.launcher_exe,
+                file_name=_LAUNCHER_ASSET_NAME,
+                mime="application/vnd.microsoft.portable-executable",
                 use_container_width=True,
                 type="primary",
             )
         else:
-            st.button(
-                "⬇  Descargar para Windows",
-                disabled=True,
-                use_container_width=True,
-                type="primary",
-                help="Próximamente disponible",
-            )
+            if st.button("⬇  Preparar descarga", use_container_width=True, type="primary"):
+                token = _get_launcher_token()
+                if not token:
+                    st.session_state.launcher_download_error = (
+                        "Falta configurar LAUNCHER_GITHUB_TOKEN en el entorno de la app."
+                    )
+                else:
+                    try:
+                        with st.spinner("Preparando descarga..."):
+                            st.session_state.launcher_exe = _fetch_launcher_exe(token)
+                        st.session_state.launcher_download_error = ""
+                        st.rerun()
+                    except RuntimeError as exc:
+                        st.session_state.launcher_download_error = str(exc)
+
+        if st.session_state.launcher_download_error:
+            st.error(st.session_state.launcher_download_error)
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
