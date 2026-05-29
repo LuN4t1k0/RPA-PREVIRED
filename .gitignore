@@ -7,3 +7,4 @@ output/
 test_*_manual.py
 *.zip
 previred-launcher/config.py
+.streamlit/secrets.toml
