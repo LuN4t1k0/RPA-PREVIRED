@@ -7,7 +7,9 @@
       "Read(//Users/cristianvenegas/**)",
       "Read(//usr/local/lib/**)",
       "Bash(python -m pytest tests/ -v)",
-      "Bash(../.venv/bin/python -m pytest tests/ -v)"
+      "Bash(../.venv/bin/python -m pytest tests/ -v)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)"
     ]
   }
 }
