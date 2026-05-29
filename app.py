@@ -52,12 +52,20 @@ for key, default in {
 
 
 def _get_launcher_token() -> str:
+    token = os.environ.get("LAUNCHER_RELEASE_DOWNLOAD_TOKEN", "")
+    if token:
+        return token
+
+    # Backward-compatible fallback while Railway variables are migrated.
     token = os.environ.get("LAUNCHER_GITHUB_TOKEN", "")
     if token:
         return token
 
     try:
-        return st.secrets.get("LAUNCHER_GITHUB_TOKEN", "")
+        return (
+            st.secrets.get("LAUNCHER_RELEASE_DOWNLOAD_TOKEN", "")
+            or st.secrets.get("LAUNCHER_GITHUB_TOKEN", "")
+        )
     except Exception:
         return ""
 
@@ -156,7 +164,7 @@ def paso_descarga():
                 token = _get_launcher_token()
                 if not token:
                     st.session_state.launcher_download_error = (
-                        "Falta configurar LAUNCHER_GITHUB_TOKEN en el entorno de la app."
+                        "Falta configurar LAUNCHER_RELEASE_DOWNLOAD_TOKEN en el entorno de la app."
                     )
                 else:
                     try:
