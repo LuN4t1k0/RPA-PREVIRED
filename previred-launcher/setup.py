@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -23,6 +24,44 @@ def is_python_ready() -> bool:
 
 def is_playwright_ready() -> bool:
     return PLAYWRIGHT_MARKER.exists()
+
+
+def ensure_desktop_shortcut(on_status=None) -> None:
+    if not sys.platform.startswith("win"):
+        return
+
+    exe_path = Path(sys.executable).resolve()
+    desktop = Path.home() / "Desktop"
+    shortcut = desktop / "Previred Downloader.lnk"
+
+    if shortcut.exists() or not desktop.exists():
+        return
+
+    if on_status:
+        on_status("Creando acceso directo...")
+
+    ps_script = (
+        "$s=(New-Object -COM WScript.Shell).CreateShortcut($args[0]);"
+        "$s.TargetPath=$args[1];"
+        "$s.WorkingDirectory=$args[2];"
+        "$s.IconLocation=$args[1];"
+        "$s.Save()"
+    )
+    subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            ps_script,
+            str(shortcut),
+            str(exe_path),
+            str(exe_path.parent),
+        ],
+        check=False,
+        creationflags=_NO_WINDOW,
+    )
 
 
 def install_python(on_status=None) -> None:

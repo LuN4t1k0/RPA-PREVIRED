@@ -67,6 +67,8 @@ class LauncherWindow:
 
     def _worker(self):
         try:
+            setup.ensure_desktop_shortcut(on_status=self._post)
+
             if not setup.is_python_ready():
                 setup.install_python(on_status=self._post)
 
