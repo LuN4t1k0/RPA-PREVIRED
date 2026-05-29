@@ -14,8 +14,8 @@ from zip_builder import construir_zip
 
 st.set_page_config(page_title="Previred Downloader", page_icon="📄", layout="centered")
 
-# URL del ejecutable Windows — actualizar cuando esté disponible en GitHub Releases
-_DOWNLOAD_URL = ""
+# URL del ejecutable Windows publicado por el workflow del launcher.
+_DOWNLOAD_URL = "https://github.com/LuN4t1k0/RPA-PREVIRED/releases/download/launcher-latest/PreviredDownloader.exe"
 
 # ── Inicialización de estado ──────────────────────────────────────────────────
 for key, default in {
