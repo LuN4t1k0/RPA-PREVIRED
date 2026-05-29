@@ -15,7 +15,11 @@ from setup import BASE_DIR, PYTHON_DIR
 APP_DIR = BASE_DIR / "app"
 VERSION_FILE = BASE_DIR / ".version"
 
-_HEADERS = {"Authorization": f"token {GITHUB_TOKEN}"}
+_HEADERS = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
