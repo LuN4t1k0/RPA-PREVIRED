@@ -5,7 +5,9 @@
       "Bash(pip3 show *)",
       "Bash(pip list *)",
       "Read(//Users/cristianvenegas/**)",
-      "Read(//usr/local/lib/**)"
+      "Read(//usr/local/lib/**)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(../.venv/bin/python -m pytest tests/ -v)"
     ]
   }
 }
