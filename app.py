@@ -14,9 +14,12 @@ from zip_builder import construir_zip
 
 st.set_page_config(page_title="Previred Downloader", page_icon="📄", layout="centered")
 
+# URL del ejecutable Windows — actualizar cuando esté disponible en GitHub Releases
+_DOWNLOAD_URL = ""
+
 # ── Inicialización de estado ──────────────────────────────────────────────────
 for key, default in {
-    "paso": 1,
+    "paso": 0,
     "session": None,           # PlaywrightSession (hilo persistente)
     "task_running": False,
     "stop_event": None,
@@ -62,6 +65,52 @@ def _poll(session: PlaywrightSession):
         time.sleep(0.3)
         st.rerun()
         return None
+
+
+# ── PASO 0: Descarga ─────────────────────────────────────────────────────────
+def paso_descarga():
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.title("📄 Previred Downloader")
+    st.markdown(
+        "Descarga la aplicación de escritorio para usarla directamente en tu "
+        "computador — sin depender del servidor, con actualizaciones automáticas "
+        "cada vez que la abres."
+    )
+    st.divider()
+
+    col_info, col_cta = st.columns([3, 2])
+
+    with col_info:
+        st.markdown("#### ¿Por qué usar la app de escritorio?")
+        st.markdown(
+            "- Corre en tu máquina, sin límites de tiempo\n"
+            "- Se actualiza sola — solo abre y listo\n"
+            "- No requiere instalación técnica"
+        )
+
+    with col_cta:
+        st.markdown("#### Descarga")
+        if _DOWNLOAD_URL:
+            st.link_button(
+                "⬇  Descargar para Windows",
+                _DOWNLOAD_URL,
+                use_container_width=True,
+                type="primary",
+            )
+        else:
+            st.button(
+                "⬇  Descargar para Windows",
+                disabled=True,
+                use_container_width=True,
+                type="primary",
+                help="Próximamente disponible",
+            )
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+        if st.button("Continuar en el navegador →", use_container_width=True):
+            st.session_state.paso = 1
+            st.rerun()
 
 
 # ── PASO 1: Acceso ────────────────────────────────────────────────────────────
@@ -543,7 +592,9 @@ def paso_listo():
 
 # ── Despacho de pasos ─────────────────────────────────────────────────────────
 paso = st.session_state.paso
-if paso == 1:
+if paso == 0:
+    paso_descarga()
+elif paso == 1:
     paso_acceso()
 elif paso == 2:
     paso_elegir_empresa()
