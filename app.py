@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import queue
 import tempfile
 import threading
@@ -46,6 +47,8 @@ for key, default in {
     "download_log_final_error": None,
     "launcher_exe": None,
     "launcher_download_error": "",
+    "saved_zip_path": "",
+    "saved_zip_error": "",
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -78,6 +81,36 @@ def _is_local_request() -> bool:
 
     hostname = host.split(":", 1)[0].lower()
     return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def _safe_filename_part(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._-")
+    return cleaned or "planillas"
+
+
+def _local_zip_output_path(empresa, desde: str, hasta: str) -> str:
+    documents = os.environ.get("USERPROFILE")
+    base_dir = (
+        os.path.join(documents, "Documents")
+        if documents
+        else os.path.join(os.path.expanduser("~"), "Documents")
+    )
+    output_dir = os.path.join(base_dir, "Previred Downloader")
+
+    rut = getattr(empresa, "rut", "") or "planillas"
+    rut_clean = rut.replace(".", "").replace("-", "")
+    period = "_".join(part for part in [desde, hasta] if part) or time.strftime("%Y%m%d_%H%M%S")
+    filename = f"planillas_{_safe_filename_part(rut_clean)}_{_safe_filename_part(period)}.zip"
+    return os.path.join(output_dir, filename)
+
+
+def _save_zip_to_disk(zip_buffer, output_path: str) -> str:
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    zip_buffer.seek(0)
+    with open(output_path, "wb") as fh:
+        fh.write(zip_buffer.read())
+    zip_buffer.seek(0)
+    return output_path
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -530,6 +563,23 @@ def _ir_a_paso5_con_lo_descargado(motivo: str | None = None):
     if motivo:
         st.session_state.download_log_final_error = motivo
     st.session_state.zip_buffer = construir_zip(st.session_state.tmpdir)
+
+    if _is_local_request():
+        try:
+            output_path = _local_zip_output_path(
+                st.session_state.empresa_seleccionada,
+                st.session_state.desde,
+                st.session_state.hasta,
+            )
+            st.session_state.saved_zip_path = _save_zip_to_disk(
+                st.session_state.zip_buffer,
+                output_path,
+            )
+            st.session_state.saved_zip_error = ""
+        except OSError as exc:
+            st.session_state.saved_zip_path = ""
+            st.session_state.saved_zip_error = str(exc)
+
     st.session_state.timeline_plan = []
     st.session_state.timeline_pending = []
     st.session_state.timeline_done = []
@@ -650,6 +700,11 @@ def paso_listo():
     col3.metric("❌ Errores", errores)
 
     st.divider()
+
+    if st.session_state.saved_zip_path:
+        st.success(f"ZIP guardado automáticamente en: {st.session_state.saved_zip_path}")
+    elif st.session_state.saved_zip_error:
+        st.warning(f"No se pudo guardar el ZIP automáticamente: {st.session_state.saved_zip_error}")
 
     if st.session_state.zip_buffer:
         empresa = st.session_state.empresa_seleccionada
