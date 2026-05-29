@@ -70,6 +70,16 @@ def _get_launcher_token() -> str:
         return ""
 
 
+def _is_local_request() -> bool:
+    try:
+        host = st.context.headers.get("host", "")
+    except Exception:
+        return False
+
+    hostname = host.split(":", 1)[0].lower()
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _fetch_launcher_exe(token: str) -> bytes:
     headers = {
@@ -663,6 +673,9 @@ def paso_listo():
 
 
 # ── Despacho de pasos ─────────────────────────────────────────────────────────
+if st.session_state.paso == 0 and _is_local_request():
+    st.session_state.paso = 1
+
 paso = st.session_state.paso
 if paso == 0:
     paso_descarga()
