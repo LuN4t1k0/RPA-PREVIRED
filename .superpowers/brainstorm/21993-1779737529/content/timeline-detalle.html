@@ -1,0 +1,200 @@
+<h2>Diseño final — Timeline B</h2>
+<p class="subtitle">Así quedaría el paso 4. Revisá el layout completo y decime si cambiás algo.</p>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.mock-app {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 12px;
+  padding: 24px 28px;
+  max-width: 640px;
+  margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Step bar */
+.step-bar { display:flex; justify-content:center; gap:0; margin-bottom:24px; font-size:11px; }
+.step { padding:4px 12px; color:#aaa; }
+.step.done { color:#888; }
+.step.done::before { content:'✓ '; }
+.step.active { color:#7B2FBE; font-weight:700; }
+.step-sep { color:#ddd; padding:4px 0; }
+
+/* Title row */
+.title-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+.page-title { font-size:24px; font-weight:700; color:#1a1a2e; }
+.progress-chip {
+  background: #f3e8ff; border: 1px solid #d6bcfa;
+  border-radius: 20px; padding: 3px 12px;
+  font-size:12px; color:#6b21a8; font-weight:600;
+}
+
+/* Progress bar */
+.pbar-wrap { background:#f1f1f1; border-radius:4px; height:6px; margin:10px 0 16px; }
+.pbar-fill { background:linear-gradient(90deg,#7B2FBE,#a855f7); height:6px; border-radius:4px; width:58%; }
+
+/* Timeline */
+.tl { position:relative; padding-left:20px; }
+.tl::before { content:''; position:absolute; left:6px; top:4px; bottom:4px; width:2px; background:#e9ecef; }
+
+.tl-row { display:flex; align-items:flex-start; gap:12px; margin-bottom:10px; position:relative; }
+
+/* dot */
+.dot { width:14px; height:14px; border-radius:50%; flex-shrink:0; margin-top:1px; position:relative; z-index:1; }
+.dot-ok   { background:#22c55e; }
+.dot-err  { background:#ef4444; }
+.dot-warn { background:#f59e0b; }
+.dot-active { background:#fff; border:2.5px solid #7B2FBE; }
+.dot-pending { background:#fff; border:2px solid #d1d5db; }
+
+/* spinner replacing dot */
+.dot-spinner { width:14px; height:14px; border-radius:50%; flex-shrink:0; margin-top:1px; position:relative; z-index:1;
+  border:2.5px solid #ede9fe; border-top-color:#7B2FBE; animation:spin 0.7s linear infinite; }
+
+/* text blocks */
+.tl-text { flex:1; min-width:0; }
+.tl-main { font-size:13px; color:#1f2937; font-weight:500; line-height:1.3; }
+.tl-sub  { font-size:11px; color:#6b7280; margin-top:1px; }
+.tl-ok   { color:#15803d; }
+.tl-err  { color:#dc2626; }
+.tl-active { color:#7B2FBE; }
+.tl-pending { color:#9ca3af; }
+.tl-size { font-size:10px; color:#9ca3af; font-weight:400; margin-left:6px; }
+
+/* divider between done/active */
+.tl-divider { height:1px; background:#f3f4f6; margin: 6px 0 10px 0; }
+
+/* stop button */
+.stop-btn {
+  width:100%; margin-top:18px; background:white; border:1px solid #d1d5db;
+  border-radius:8px; padding:9px; font-size:13px; color:#374151;
+  cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;
+}
+.stop-btn:hover { background:#f9fafb; }
+</style>
+
+<div class="mockup">
+  <div class="mockup-header">Vista previa · Paso 4 Descargando</div>
+  <div class="mockup-body" style="padding:0">
+    <div class="mock-app">
+
+      <!-- Barra de pasos -->
+      <div class="step-bar">
+        <span class="step done">1. Acceso</span><span class="step-sep">·</span>
+        <span class="step done">2. Empresa</span><span class="step-sep">·</span>
+        <span class="step done">3. Selección</span><span class="step-sep">·</span>
+        <span class="step active">4. Descargando</span><span class="step-sep">·</span>
+        <span class="step">5. Listo</span>
+      </div>
+
+      <!-- Título + chip -->
+      <div class="title-row">
+        <div class="page-title">⬇️ Descargando…</div>
+        <div class="progress-chip">7 / 20 listos</div>
+      </div>
+
+      <!-- Barra de progreso -->
+      <div class="pbar-wrap"><div class="pbar-fill"></div></div>
+
+      <!-- Timeline -->
+      <div class="tl">
+
+        <!-- Completados -->
+        <div class="tl-row">
+          <div class="dot dot-ok"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-ok">✅ 2026-01 / Capital <span class="tl-size">42 KB</span></div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="dot dot-ok"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-ok">✅ 2026-01 / Cuprum <span class="tl-size">24 KB</span></div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="dot dot-ok"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-ok">✅ 2026-01 / Habitat <span class="tl-size">59 KB</span></div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="dot dot-ok"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-ok">✅ 2026-01 / Modelo <span class="tl-size">67 KB</span></div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="dot dot-ok"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-ok">✅ 2026-01 / PlanVital <span class="tl-size">34 KB</span></div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="dot dot-err"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-err">❌ 2026-01 / Provida</div>
+            <div class="tl-sub">Buscar falló tras recuperación</div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="dot dot-warn"></div>
+          <div class="tl-text">
+            <div class="tl-main" style="color:#92400e">⚠️ 2026-01 / UNO — sin datos</div>
+          </div>
+        </div>
+
+        <div class="tl-divider"></div>
+
+        <!-- Ítem activo -->
+        <div class="tl-row">
+          <div class="dot-spinner"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-active">Buscando planillas 2026-02 / SOP 022026…</div>
+            <div class="tl-sub" style="animation:pulse 1.5s ease-in-out infinite">navegando al formulario</div>
+          </div>
+        </div>
+
+        <div class="tl-divider"></div>
+
+        <!-- Próximos pendientes -->
+        <div class="tl-row">
+          <div class="dot dot-pending"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-pending">2026-02 / Capital</div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="dot dot-pending"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-pending">2026-02 / Cuprum</div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <div class="dot dot-pending"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-pending">2026-02 / Habitat</div>
+          </div>
+        </div>
+        <div class="tl-row" style="opacity:0.5">
+          <div class="dot dot-pending"></div>
+          <div class="tl-text">
+            <div class="tl-main tl-pending">+ 10 más pendientes…</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Botón detener -->
+      <button class="stop-btn">⏹ Detener y descargar lo que tengo</button>
+
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="text-align:center;margin-top:16px">
+  El spinner gira en morado mientras trabaja · los pendientes aparecen en gris · el tamaño del PDF aparece en los completados
+</p>

@@ -1,0 +1,150 @@
+<h2>¿Cómo debería verse el paso de descarga?</h2>
+<p class="subtitle">El problema actual: cuando el bot está navegando entre períodos no hay ninguna señal visual de que sigue trabajando. Elegí el enfoque que mejor refleja lo que buscás.</p>
+
+<style>
+.mock-paso4 {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 12px;
+}
+.mock-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #1a1a2e; }
+.mock-progress-bar-wrap { background: #e9ecef; border-radius: 4px; height: 8px; margin-bottom: 8px; }
+.mock-progress-bar-fill { background: linear-gradient(90deg, #7B2FBE, #9d4edd); height: 8px; border-radius: 4px; transition: width 0.3s; }
+.mock-progress-label { color: #6c757d; font-size: 11px; margin-bottom: 12px; }
+.mock-status-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #e8f4fd; border: 1px solid #bee3f8; border-radius: 20px;
+  padding: 4px 12px; color: #2b6cb0; font-size: 11px; margin-bottom: 10px;
+}
+.mock-spinner { width: 10px; height: 10px; border: 2px solid #bee3f8; border-top-color: #2b6cb0; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.mock-log-item { padding: 3px 0; color: #333; border-bottom: 1px solid #f0f0f0; }
+.mock-log-item:last-child { border: none; }
+.ok { color: #276749; } .err { color: #c53030; } .warn { color: #744210; } .info { color: #2b6cb0; }
+
+/* Timeline styles */
+.mock-timeline { padding: 0; list-style: none; position: relative; }
+.mock-timeline::before { content: ''; position: absolute; left: 11px; top: 0; bottom: 0; width: 2px; background: #e9ecef; }
+.mock-tl-item { display: flex; gap: 10px; margin-bottom: 8px; position: relative; }
+.mock-tl-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 3px; flex-shrink: 0; position: relative; z-index: 1; }
+.mock-tl-dot.ok { background: #38a169; }
+.mock-tl-dot.active { background: #fff; border: 2px solid #7B2FBE; }
+.mock-tl-dot.err { background: #e53e3e; }
+.mock-tl-text { font-size: 11px; color: #333; }
+.mock-tl-text.muted { color: #6c757d; }
+.mock-tl-spin { width: 10px; height: 10px; border: 2px solid #e9d8fd; border-top-color: #7B2FBE; border-radius: 50%; animation: spin 0.8s linear infinite; margin-top: 3px; flex-shrink: 0; }
+
+/* Split panel */
+.mock-split-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mock-panel { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; }
+.mock-panel-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6c757d; margin-bottom: 8px; }
+.mock-big-status { text-align: center; padding: 12px 4px; }
+.mock-big-spinner { width: 28px; height: 28px; border: 3px solid #e9d8fd; border-top-color: #7B2FBE; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 8px; }
+.mock-big-text { font-size: 11px; color: #333; font-weight: 600; }
+.mock-big-sub { font-size: 10px; color: #6c757d; margin-top: 2px; }
+.mock-counters { display: flex; justify-content: space-around; margin-top: 10px; }
+.mock-counter { text-align: center; }
+.mock-counter-val { font-size: 20px; font-weight: 700; }
+.mock-counter-lbl { font-size: 9px; color: #6c757d; text-transform: uppercase; }
+.val-ok { color: #38a169; } .val-err { color: #e53e3e; } .val-skip { color: #d69e2e; }
+.mock-stop-btn {
+  width: 100%; margin-top: 10px; background: white; border: 1px solid #cbd5e0;
+  border-radius: 6px; padding: 5px; font-size: 11px; color: #4a5568; cursor: pointer;
+}
+</style>
+
+<div class="cards">
+
+  <!-- Opción A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mock-paso4">
+        <div class="mock-title">⬇️ Descargando planillas…</div>
+        <div class="mock-progress-bar-wrap">
+          <div class="mock-progress-bar-fill" style="width:65%"></div>
+        </div>
+        <div class="mock-progress-label">13 de 20 instituciones · 2 errores · estimado 45s</div>
+        <div class="mock-status-badge">
+          <div class="mock-spinner"></div>
+          Buscando 2026-02 / SOP 022026…
+        </div>
+        <div style="height:100px;overflow:hidden">
+          <div class="mock-log-item ok">✅ 2026-01 / Capital</div>
+          <div class="mock-log-item ok">✅ 2026-01 / Cuprum</div>
+          <div class="mock-log-item ok">✅ 2026-01 / Habitat</div>
+          <div class="mock-log-item err">❌ 2026-02 / AFP</div>
+          <div class="mock-log-item ok">✅ 2026-01 / Modelo</div>
+        </div>
+        <button class="mock-stop-btn">⏹ Detener y descargar lo que tengo</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Barra de progreso + badge de estado</h3>
+      <p>Barra visual con porcentaje, contador (X de Y), estimación de tiempo, y un badge animado que muestra qué está haciendo el bot en tiempo real. El log sigue igual debajo.</p>
+    </div>
+  </div>
+
+  <!-- Opción B -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mock-paso4">
+        <div class="mock-title">⬇️ Descargando planillas…</div>
+        <ul class="mock-timeline">
+          <li class="mock-tl-item"><div class="mock-tl-dot ok"></div><div class="mock-tl-text ok">✅ 2026-01 / Capital · 42 KB</div></li>
+          <li class="mock-tl-item"><div class="mock-tl-dot ok"></div><div class="mock-tl-text ok">✅ 2026-01 / Cuprum · 24 KB</div></li>
+          <li class="mock-tl-item"><div class="mock-tl-dot ok"></div><div class="mock-tl-text ok">✅ 2026-01 / Habitat · 59 KB</div></li>
+          <li class="mock-tl-item"><div class="mock-tl-dot err"></div><div class="mock-tl-text err">❌ 2026-02 / AFP — error</div></li>
+          <li class="mock-tl-item"><div class="mock-tl-spin"></div><div class="mock-tl-text" style="color:#7B2FBE;font-weight:600">Buscando 2026-02 / SOP 022026…</div></li>
+          <li class="mock-tl-item"><div class="mock-tl-dot active"></div><div class="mock-tl-text muted">2026-02 / Capital — pendiente</div></li>
+          <li class="mock-tl-item"><div class="mock-tl-dot active"></div><div class="mock-tl-text muted">2026-02 / Cuprum — pendiente</div></li>
+        </ul>
+        <button class="mock-stop-btn">⏹ Detener y descargar lo que tengo</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Timeline con ítem activo visible</h3>
+      <p>Feed vertical tipo actividad: los completados arriba, el ítem actual con spinner morado girando, y los próximos pendientes en gris. Nunca parece colgado porque siempre hay algo moviéndose.</p>
+    </div>
+  </div>
+
+  <!-- Opción C -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mock-paso4">
+        <div class="mock-title">⬇️ Descargando planillas…</div>
+        <div class="mock-split-wrap">
+          <div class="mock-panel">
+            <div class="mock-panel-title">Ahora mismo</div>
+            <div class="mock-big-status">
+              <div class="mock-big-spinner"></div>
+              <div class="mock-big-text">Buscando planillas</div>
+              <div class="mock-big-sub">2026-02 / SOP 022026</div>
+            </div>
+            <div class="mock-counters">
+              <div class="mock-counter"><div class="mock-counter-val val-ok">11</div><div class="mock-counter-lbl">OK</div></div>
+              <div class="mock-counter"><div class="mock-counter-val val-err">2</div><div class="mock-counter-lbl">Error</div></div>
+              <div class="mock-counter"><div class="mock-counter-val val-skip">1</div><div class="mock-counter-lbl">Sin datos</div></div>
+            </div>
+          </div>
+          <div class="mock-panel">
+            <div class="mock-panel-title">Historial</div>
+            <div class="mock-log-item ok">✅ 2026-01 / Capital</div>
+            <div class="mock-log-item ok">✅ 2026-01 / Cuprum</div>
+            <div class="mock-log-item ok">✅ 2026-01 / Habitat</div>
+            <div class="mock-log-item err">❌ 2026-02 / AFP</div>
+            <div class="mock-log-item ok">✅ 2026-01 / Modelo</div>
+          </div>
+        </div>
+        <button class="mock-stop-btn">⏹ Detener y descargar lo que tengo</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Panel dividido: estado + historial</h3>
+      <p>Izquierda: estado actual grande con spinner, texto de qué está haciendo ahora, y contadores (OK / Error / Sin datos). Derecha: log histórico. Máxima claridad de qué pasa en tiempo real.</p>
+    </div>
+  </div>
+
+</div>
