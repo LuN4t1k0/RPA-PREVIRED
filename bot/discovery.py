@@ -4,6 +4,7 @@ import threading
 from playwright.sync_api import Page
 
 from models import BotMessage, Empresa, Nomina
+from rut import limpiar_rut
 
 
 def _periodos_en_rango(desde: str, hasta: str) -> list[str]:
@@ -57,7 +58,24 @@ def _ir_a_lista_empresas(page: Page):
     if page.locator("tr:has(button.ingresar)").count() > 0:
         return
 
-    # Si estamos dentro de wEmpresas (empresa dashboard o planillas), volver al portal via Inicio
+    # Dentro de wEmpresas existe un acceso directo al listado. Usarlo evita
+    # volver al portal principal, donde li#empresa puede renderizar tarde o no
+    # aparecer si la sesión conserva el contexto de la empresa.
+    if "wEmpresas" in page.url:
+        listado = page.locator("span#listado_empresas")
+        if listado.count() > 0:
+            if listado.first.is_visible():
+                try:
+                    listado.first.click(timeout=5_000)
+                except Exception:
+                    listado.first.evaluate("element => element.click()")
+            else:
+                listado.first.evaluate("element => element.click()")
+            page.wait_for_load_state("networkidle")
+            page.wait_for_selector("tr:has(button.ingresar)", timeout=20_000)
+            return
+
+    # Fallback desde otras pantallas: volver al portal vía Inicio.
     if "wPortal" not in page.url:
         page.locator("a:has-text('Inicio')").first.click()
         page.wait_for_url("**/wPortal/**", timeout=20_000)
@@ -119,12 +137,20 @@ def obtener_nominas_empresa(
     _status(msg_queue, f"Navegando a {empresa.nombre}...")
     _ir_a_lista_empresas(page)
 
-    filas = page.locator("tr:has(button.ingresar)").filter(
-        has=page.locator(f"td:has-text('{empresa.rut}')")
-    )
-    fila = filas.first
+    rut_buscado = limpiar_rut(empresa.rut)
+    filas = page.locator("tr:has(button.ingresar)")
+    coincidencias = []
     for i in range(filas.count()):
         candidate = filas.nth(i)
+        rut_mostrado = candidate.locator("td").nth(1).inner_text().strip()
+        if limpiar_rut(rut_mostrado) == rut_buscado:
+            coincidencias.append(candidate)
+
+    if not coincidencias:
+        raise RuntimeError(f"No se encontró la empresa con RUT {empresa.rut}.")
+
+    fila = coincidencias[0]
+    for candidate in coincidencias:
         if candidate.locator("td").nth(2).inner_text().strip() == empresa.nombre:
             fila = candidate
             break

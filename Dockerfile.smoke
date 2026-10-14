@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+WORKDIR /workspace
+
+COPY desktop_backend/requirements.txt /tmp/desktop-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/desktop-requirements.txt
+RUN python -m playwright install --with-deps chromium
+
+CMD ["python", "scripts/previred_smoke.py"]

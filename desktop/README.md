@@ -35,3 +35,28 @@ Electron main process
 ```
 
 Las credenciales se envían al worker en memoria y no se persisten. Los resultados se generan primero en un ZIP temporal y el usuario elige dónde guardarlo.
+
+## Smoke test con Docker
+
+La prueba pública no necesita credenciales:
+
+```bash
+docker compose -f docker-compose.smoke.yml run --rm previred-smoke \
+  python scripts/previred_smoke.py --public-only
+```
+
+Para probar login y listado de empresas sin guardar ni compartir la contraseña:
+
+```bash
+docker compose -f docker-compose.smoke.yml run --rm previred-smoke
+```
+
+Para probar una empresa y un rango completo sin guardar credenciales:
+
+```bash
+docker compose -f docker-compose.smoke.yml run --rm previred-smoke \
+  python scripts/previred_smoke.py \
+  --company-rut 93830000-3 --desde 2019-01 --hasta 2019-12
+```
+
+El proceso solicita RUT y contraseña directamente en la terminal. Si falla, deja `failure.png`, `failure.html`, `failure-url.txt` y `trace.zip` en `artifacts/previred-smoke/`.

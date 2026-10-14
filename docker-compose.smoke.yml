@@ -1,0 +1,17 @@
+services:
+  previred-smoke:
+    build:
+      context: .
+      dockerfile: Dockerfile.smoke
+    working_dir: /workspace
+    environment:
+      PREVIRED_RUT: ${PREVIRED_RUT:-}
+      PREVIRED_PASSWORD: ${PREVIRED_PASSWORD:-}
+      PREVIRED_COMPANY_RUT: ${PREVIRED_COMPANY_RUT:-}
+      PREVIRED_DESDE: ${PREVIRED_DESDE:-}
+      PREVIRED_HASTA: ${PREVIRED_HASTA:-}
+    volumes:
+      - .:/workspace
+      - ./artifacts/previred-smoke:/artifacts
+    stdin_open: true
+    tty: true

@@ -16,3 +16,4 @@ desktop/python-runtime/
 desktop/ms-playwright/
 desktop/.runtime-downloads/
 desktop/src/config.generated.json
+artifacts/

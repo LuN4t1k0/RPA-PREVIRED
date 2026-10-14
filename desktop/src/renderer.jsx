@@ -15,6 +15,7 @@ import {
   X
 } from "lucide-react";
 import "./styles.css";
+import { formatRutInput, isValidRut, normalizeRut } from "./rut.mjs";
 
 const steps = ["Acceso", "Empresa", "Seleccion", "Descarga", "Listo"];
 
@@ -117,9 +118,18 @@ function App() {
   async function login(event) {
     event.preventDefault();
     setError("");
+    const formattedRut = formatRutInput(credentials.rut);
+    setCredentials((value) => ({ ...value, rut: formattedRut }));
+    if (!isValidRut(formattedRut)) {
+      setError("RUT inválido. Revisa el número y dígito verificador.");
+      return;
+    }
     setBusy(true);
     setMessage("Iniciando sesion...");
-    const result = await window.desktopApi.login(credentials);
+    const result = await window.desktopApi.login({
+      ...credentials,
+      rut: normalizeRut(formattedRut)
+    });
     if (!result.ok) { setBusy(false); setError(result.message); }
   }
 
@@ -223,8 +233,8 @@ function App() {
             <div className="card-icon"><ShieldCheck /></div>
             <h2>Acceso seguro</h2>
             <p>Las credenciales se usan solo en memoria y nunca se guardan en el equipo.</p>
-            <label>RUT<input value={credentials.rut} onChange={(e) => setCredentials((v) => ({ ...v, rut: e.target.value }))} placeholder="15.644.021-3" autoFocus /></label>
-            <label>Contraseña<div className="input-icon"><KeyRound /><input type="password" value={credentials.password} onChange={(e) => setCredentials((v) => ({ ...v, password: e.target.value }))} /></div></label>
+            <label>RUT<input value={credentials.rut} onChange={(e) => setCredentials((v) => ({ ...v, rut: formatRutInput(e.target.value) }))} placeholder="15.644.021-3" autoComplete="username" inputMode="text" maxLength={12} autoFocus /></label>
+            <label>Contraseña<div className="input-icon"><KeyRound /><input type="password" value={credentials.password} onChange={(e) => setCredentials((v) => ({ ...v, password: e.target.value }))} autoComplete="current-password" /></div></label>
             <button className="primary" type="submit" disabled={busy}>{busy ? "Conectando..." : "Conectar con Previred"}</button>
           </form>
         )}
@@ -283,7 +293,7 @@ function App() {
 
         {step === 4 && (
           <section className="card done-card">
-            <div className="success-mark"><Check /></div><h2>Archivo listo</h2><p>El ZIP contiene las planillas descargadas y conserva los resultados parciales si detuviste el proceso.</p>
+            <div className="success-mark"><Check /></div><h2>Archivo listo</h2><p>El ZIP contiene las planillas organizadas en carpetas por AFP y conserva los resultados parciales si detuviste el proceso.</p>
             <div className="metrics"><Metric value={summary.ok} label="Descargadas" tone="green" /><Metric value={summary.empty} label="Sin datos" tone="amber" /><Metric value={summary.errors} label="Errores" tone="red" /></div>
             <button className="primary large" onClick={save} disabled={!outputPath}><Download /> Guardar ZIP</button>
             <button className="quiet" onClick={reset}>Nueva ejecucion</button>

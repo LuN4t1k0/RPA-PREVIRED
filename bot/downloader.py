@@ -1,11 +1,13 @@
 import os
 import queue
+import re
 import threading
 from playwright.sync_api import Page
 
 from bot.discovery import _abrir_planillas_pagadas, _ir_a_lista_empresas
 from checkpoint import Checkpoint
 from models import BotMessage, Estado, Empresa, Nomina, Planilla
+from rut import limpiar_rut
 
 MESES = {
     "01": "Enero", "02": "Febrero", "03": "Marzo", "04": "Abril",
@@ -14,17 +16,49 @@ MESES = {
 }
 
 
+def _componente_ruta(value: str, fallback: str) -> str:
+    """Convierte texto proveniente del portal en una carpeta segura y legible."""
+    componente = re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip()).strip("_")
+    return componente or fallback
+
+
+def _ruta_salida_planilla(
+    output_base: str,
+    rut_empresa: str,
+    periodo: str,
+    nomina_slug: str,
+    institucion: str,
+) -> tuple[str, str]:
+    """Deja cada PDF directamente en la carpeta de su AFP."""
+    afp = _componente_ruta(institucion, "AFP")
+    nomina = _componente_ruta(nomina_slug, "NOMINA")
+    output_dir = os.path.join(output_base, afp)
+    nombre_archivo = f"{limpiar_rut(rut_empresa)}_{periodo}_{nomina}.pdf"
+    return output_dir, nombre_archivo
+
+
 def _click_ingresar_empresa(page: Page, empresa: Empresa):
     """Hace clic en el botón Ingresar de la fila correcta, distinguiendo duplicados por nombre."""
-    filas = page.locator("tr:has(button.ingresar)").filter(
-        has=page.locator(f"td:has-text('{empresa.rut}')")
-    )
-    fila = filas.first
+    rut_buscado = limpiar_rut(empresa.rut)
+    filas = page.locator("tr:has(button.ingresar)")
+    coincidencias = []
+
     for i in range(filas.count()):
         candidate = filas.nth(i)
+        rut_mostrado = candidate.locator("td").nth(1).inner_text().strip()
+        rut_normalizado = limpiar_rut(rut_mostrado)
+        if rut_normalizado == rut_buscado:
+            coincidencias.append(candidate)
+
+    if not coincidencias:
+        raise RuntimeError(f"No se encontró la empresa con RUT {empresa.rut}.")
+
+    fila = coincidencias[0]
+    for candidate in coincidencias:
         if candidate.locator("td").nth(2).inner_text().strip() == empresa.nombre:
             fila = candidate
             break
+
     fila.locator("button.ingresar").click()
 
 
@@ -107,6 +141,7 @@ def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_ar
     downloads_main: list = []
     new_pages: list = []
     downloads_new_pages: list = []
+    pdf_bytes_list: list[bytes] = []
 
     def on_download(dl):
         downloads_main.append(dl)
@@ -115,14 +150,45 @@ def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_ar
         new_pages.append(p)
         p.on("download", lambda d: downloads_new_pages.append(d))
 
+    def capture_pdf(route, request):
+        if request.method != "GET":
+            route.continue_()
+            return
+        try:
+            response = route.fetch(timeout=30_000)
+            body = response.body()
+            content_type = response.headers.get("content-type", "").lower()
+            if body.startswith(b"%PDF") or "application/pdf" in content_type:
+                pdf_bytes_list.append(body)
+            route.fulfill(response=response)
+        except Exception:
+            try:
+                route.continue_()
+            except Exception:
+                pass
+
     page.on("download", on_download)
     page.context.on("page", on_page)
+    # Previred actualmente abre CtrlPdf directamente en una pestaña, sin evento
+    # download ni botón Imprimir. Interceptar desde antes del clic permite
+    # conservar el cuerpo PDF de ese nuevo flujo y también sirve para Flujo C.
+    page.context.route("**/CtrlPdf**", capture_pdf)
 
     try:
         icono_pdf.click()
         page.wait_for_timeout(3000)
 
-        if downloads_main:
+        if pdf_bytes_list:
+            with open(ruta, "wb") as f:
+                f.write(pdf_bytes_list[0])
+            for p in new_pages:
+                try:
+                    p.close()
+                except Exception:
+                    pass
+            return ruta
+
+        elif downloads_main:
             # Flujo A: descarga directa en la página principal
             downloads_main[0].save_as(ruta)
             for p in new_pages:
@@ -142,11 +208,21 @@ def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_ar
             radios = popup.locator("input[type='radio']")
             if radios.count() > 0:
                 radios.first.click()
-            popup.click("button:has-text('Imprimir')")
+                popup.click("button:has-text('Imprimir')")
+            elif "/CtrlPdf" not in popup.url:
+                raise Exception("Flujo B: popup sin opciones ni botón Imprimir")
             for _ in range(30):
-                if downloads_new_pages or downloads_main:
+                if downloads_new_pages or downloads_main or pdf_bytes_list:
                     break
                 page.wait_for_timeout(500)
+            if pdf_bytes_list:
+                with open(ruta, "wb") as f:
+                    f.write(pdf_bytes_list[0])
+                try:
+                    popup.close()
+                except Exception:
+                    pass
+                return ruta
             dl = (downloads_new_pages[0] if downloads_new_pages
                   else downloads_main[0] if downloads_main else None)
             if dl is None:
@@ -164,46 +240,18 @@ def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_ar
             if panel_btn.count() == 0 or not panel_btn.first.is_visible():
                 raise Exception("No se detectó descarga, popup ni panel #aceptar_modal")
 
-            pdf_bytes_list: list = []
-
-            def capture_pdf(route, request):
-                if request.method == "GET":
-                    try:
-                        resp = route.fetch(timeout=30_000)
-                        body = resp.body()
-                        if body:
-                            pdf_bytes_list.append(body)
-                        try:
-                            route.fulfill(response=resp)
-                        except Exception:
-                            pass
-                    except Exception:
-                        try:
-                            route.continue_()
-                        except Exception:
-                            pass
-                else:
-                    try:
-                        route.continue_()
-                    except Exception:
-                        pass
-
-            page.context.route("**/CtrlPdf**", capture_pdf)
-            try:
-                total_empresa = page.locator("input[name='web_tipo_busqueda'][value='0']")
-                if total_empresa.count() > 0:
-                    try:
-                        total_empresa.first.click()
-                    except Exception:
-                        pass
-                panel_btn.first.click()
-                # Esperar hasta 15s: AJAX POST + window.open + navegación + respuesta PDF
-                for _ in range(30):
-                    if pdf_bytes_list:
-                        break
-                    page.wait_for_timeout(500)
-            finally:
-                page.context.unroute("**/CtrlPdf**", capture_pdf)
+            total_empresa = page.locator("input[name='web_tipo_busqueda'][value='0']")
+            if total_empresa.count() > 0:
+                try:
+                    total_empresa.first.click()
+                except Exception:
+                    pass
+            panel_btn.first.click()
+            # Esperar hasta 15s: AJAX POST + window.open + navegación + respuesta PDF
+            for _ in range(30):
+                if pdf_bytes_list:
+                    break
+                page.wait_for_timeout(500)
 
             for p in new_pages:
                 try:
@@ -232,6 +280,10 @@ def _descargar_pdf_institucion(page: Page, icono_pdf, output_dir: str, nombre_ar
             return ruta
 
     finally:
+        try:
+            page.context.unroute("**/CtrlPdf**", capture_pdf)
+        except Exception:
+            pass
         page.remove_listener("download", on_download)
         page.context.remove_listener("page", on_page)
 
@@ -355,10 +407,14 @@ def descargar_empresa(
                     msg_queue.put(BotMessage(tipo="planilla", datos={"planilla": planilla}))
                     continue
 
-                rut_clean = empresa.rut.replace(".", "").replace("-", "")
-                output_dir = os.path.join(output_base, periodo, nomina.slug)
+                output_dir, nombre_archivo = _ruta_salida_planilla(
+                    output_base,
+                    empresa.rut,
+                    periodo,
+                    nomina.slug,
+                    nombre_inst,
+                )
                 os.makedirs(output_dir, exist_ok=True)
-                nombre_archivo = f"{rut_clean}_{nombre_inst.replace(' ', '_')}_{periodo}.pdf"
 
                 try:
                     ruta = _descargar_pdf_institucion(page, icono, output_dir, nombre_archivo)

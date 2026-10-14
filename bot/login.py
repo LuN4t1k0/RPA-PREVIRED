@@ -1,5 +1,7 @@
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page, Playwright
 
+from rut import validar_rut
+
 
 def _cerrar_dialogs(page: Page) -> None:
     """Descarta cualquier modal jQuery UI visible para que no bloquee el formulario."""
@@ -25,6 +27,7 @@ def _cerrar_dialogs(page: Page) -> None:
 
 
 def abrir_sesion(rut: str, password: str) -> tuple[Playwright, Browser, BrowserContext, Page]:
+    rut_normalizado = validar_rut(rut)
     pw = sync_playwright().start()
     browser = pw.chromium.launch(headless=True)
     context = browser.new_context(accept_downloads=True)
@@ -37,7 +40,7 @@ def abrir_sesion(rut: str, password: str) -> tuple[Playwright, Browser, BrowserC
     # Cerrar cualquier modal/overlay que bloquee el formulario (aviso, términos, etc.)
     _cerrar_dialogs(page)
 
-    page.fill("input#web_rut2", rut)
+    page.fill("input#web_rut2", rut_normalizado)
     page.fill("input#web_password", password)
 
     # Verificar de nuevo que no haya overlay antes de hacer click
