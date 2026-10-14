@@ -1,4 +1,4 @@
-from desktop_backend.worker import planilla_payload, selected_empresa, serialize_nominas
+from desktop_backend.worker import find_empresa, planilla_payload, selected_empresa, serialize_nominas
 from models import Empresa, Estado, Nomina, Planilla
 
 
@@ -23,6 +23,14 @@ def test_serialize_nominas_expone_contrato_del_renderer():
     assert serialize_nominas(empresa) == [
         {"periodo": "2026-03", "nominas": [{"nombre": "Mensual", "slug": "MENSUAL"}]}
     ]
+
+
+def test_find_empresa_usa_rut_aunque_nombre_llegue_corrompido():
+    empresa = Empresa(rut="76.123.456-7", nombre="COMPAÑÍA DEMO")
+
+    result = find_empresa([empresa], "76123456-7", "COMPAÃ‘ÃA DEMO")
+
+    assert result is empresa
 
 
 def test_planilla_payload_convierte_enum_a_json():

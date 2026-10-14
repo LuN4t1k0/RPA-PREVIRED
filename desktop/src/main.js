@@ -66,7 +66,15 @@ function pythonCommand() {
 }
 
 function workerEnv() {
-  const env = { ...process.env, PYTHONUNBUFFERED: "1" };
+  // Windows otherwise inherits the active ANSI code page for redirected
+  // stdio. The worker protocol is JSON-lines and Electron always decodes it
+  // as UTF-8, so both sides must use the same encoding.
+  const env = {
+    ...process.env,
+    PYTHONUNBUFFERED: "1",
+    PYTHONUTF8: "1",
+    PYTHONIOENCODING: "utf-8"
+  };
   if (app.isPackaged) {
     const browsersPath = path.join(process.resourcesPath, "ms-playwright");
     if (fs.existsSync(browsersPath)) env.PLAYWRIGHT_BROWSERS_PATH = browsersPath;

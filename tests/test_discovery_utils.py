@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 from bot.discovery import _ir_a_lista_empresas, _periodos_en_rango, _slug
 
 
@@ -42,3 +44,22 @@ def test_ir_a_lista_empresas_usa_acceso_directo_desde_empresa():
         "tr:has(button.ingresar)", timeout=20_000
     )
     page.wait_for_url.assert_not_called()
+
+
+def test_ir_a_lista_empresas_abre_url_directa_si_menu_no_aparece():
+    page = MagicMock()
+    page.url = "https://www.previred.com/wPortal/CtrlFce"
+    rows = MagicMock()
+    rows.count.return_value = 0
+    page.locator.return_value = rows
+    page.wait_for_selector.side_effect = [
+        PlaywrightTimeoutError("menu ausente"),
+        None,
+    ]
+
+    _ir_a_lista_empresas(page)
+
+    page.goto.assert_called_once_with("https://www.previred.com/wEmpresas/CtrlFce")
+    assert page.wait_for_selector.call_args_list[-1].args == (
+        "tr:has(button.ingresar)",
+    )

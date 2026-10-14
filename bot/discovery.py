@@ -1,7 +1,7 @@
 import queue
 import re
 import threading
-from playwright.sync_api import Page
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 from models import BotMessage, Empresa, Nomina
 from rut import limpiar_rut
@@ -82,10 +82,15 @@ def _ir_a_lista_empresas(page: Page):
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1500)  # El portal renderiza li#empresa un momento después de networkidle
 
-    # Desde el portal, ir a la lista de empresas
-    page.wait_for_selector("li#empresa", state="visible", timeout=30_000)
-    page.click("li#empresa")
-    page.wait_for_url("**/wEmpresas/**", timeout=20_000)
+    # Desde el portal, usar el acceso visual cuando esté disponible. En
+    # algunas sesiones de Windows ese menú no se renderiza, aunque la sesión
+    # autenticada sí permite abrir directamente el Administrador de Empresas.
+    try:
+        page.wait_for_selector("li#empresa", state="visible", timeout=8_000)
+        page.click("li#empresa")
+        page.wait_for_url("**/wEmpresas/**", timeout=20_000)
+    except PlaywrightTimeoutError:
+        page.goto("https://www.previred.com/wEmpresas/CtrlFce")
     page.wait_for_load_state("networkidle")
     page.wait_for_selector("tr:has(button.ingresar)", timeout=20_000)
 

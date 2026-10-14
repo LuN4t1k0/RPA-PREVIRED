@@ -25,11 +25,20 @@ from bot.downloader import descargar_empresa
 from bot.login import abrir_sesion
 from checkpoint import Checkpoint
 from models import BotMessage, Empresa, Estado, Nomina, Planilla
+from rut import limpiar_rut
 from zip_builder import construir_zip
 
 
 COMMANDS: queue.Queue[dict | None] = queue.Queue()
 CANCEL_EVENT = threading.Event()
+
+
+def configure_stdio() -> None:
+    """Keep the Electron JSON-lines protocol UTF-8 on every Windows locale."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
 
 
 def emit(event_type: str, **payload) -> None:
@@ -83,6 +92,15 @@ def serialize_nominas(empresa: Empresa) -> list[dict]:
     ]
 
 
+def find_empresa(empresas: list[Empresa], rut: str, nombre: str = "") -> Empresa | None:
+    """Resolve a company by its stable RUT, using its name only as a tie-breaker."""
+    rut_buscado = limpiar_rut(rut)
+    coincidencias = [item for item in empresas if limpiar_rut(item.rut) == rut_buscado]
+    if not coincidencias:
+        return None
+    return next((item for item in coincidencias if item.nombre == nombre), coincidencias[0])
+
+
 def selected_empresa(source: Empresa, selected: list[dict]) -> Empresa:
     allowed = {(str(item.get("periodo")), str(item.get("slug"))) for item in selected}
     result = Empresa(rut=source.rut, nombre=source.nombre)
@@ -108,6 +126,7 @@ def close_browser(pw, browser) -> None:
 
 
 def main() -> int:
+    configure_stdio()
     signal.signal(signal.SIGINT, lambda *_: CANCEL_EVENT.set())
     signal.signal(signal.SIGTERM, lambda *_: CANCEL_EVENT.set())
     threading.Thread(target=read_commands, daemon=True).start()
@@ -146,7 +165,7 @@ def main() -> int:
                     CANCEL_EVENT.clear()
                     rut = str(command.get("rut", ""))
                     nombre = str(command.get("nombre", ""))
-                    source = next((e for e in empresas if e.rut == rut and e.nombre == nombre), None)
+                    source = find_empresa(empresas, rut, nombre)
                     if source is None:
                         raise RuntimeError("No se encontro la empresa seleccionada.")
                     active_empresa = Empresa(rut=source.rut, nombre=source.nombre)
