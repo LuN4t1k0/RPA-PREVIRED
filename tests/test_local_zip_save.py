@@ -1,5 +1,6 @@
 import io
 import zipfile
+from pathlib import Path
 
 import app
 
@@ -13,7 +14,10 @@ def test_local_zip_output_path_uses_documents_folder(monkeypatch, tmp_path):
 
     path = app._local_zip_output_path(_Empresa(), "2026-01", "2026-05")
 
-    assert path.endswith("Documents/Previred Downloader/planillas_761234567_2026-01_2026-05.zip")
+    output = Path(path)
+    assert output.name == "planillas_761234567_2026-01_2026-05.zip"
+    assert output.parent.name == "Previred Downloader"
+    assert output.parent.parent.name == "Documents"
 
 
 def test_save_zip_to_disk_preserves_buffer_position(tmp_path):
