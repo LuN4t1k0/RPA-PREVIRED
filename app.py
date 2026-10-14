@@ -20,8 +20,8 @@ from zip_builder import construir_zip
 
 st.set_page_config(page_title="Previred Downloader", page_icon="📄", layout="centered")
 
-_RELEASE_API_URL = "https://api.github.com/repos/LuN4t1k0/RPA-PREVIRED/releases/tags/launcher-latest"
-_LAUNCHER_ASSET_NAME = "PreviredDownloader.exe"
+_RELEASE_API_URL = "https://api.github.com/repos/LuN4t1k0/RPA-PREVIRED/releases/latest"
+_INSTALLER_ASSET_PREFIX = "Previred-Downloader-Setup-"
 
 # ── Inicialización de estado ──────────────────────────────────────────────────
 for key, default in {
@@ -116,10 +116,11 @@ def _save_zip_to_disk(zip_buffer, output_path: str) -> str:
 @st.cache_data(ttl=3600, show_spinner=False)
 def _fetch_launcher_exe(token: str) -> bytes:
     headers = {
-        "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     try:
         req = urllib.request.Request(_RELEASE_API_URL, headers=headers)
@@ -127,17 +128,20 @@ def _fetch_launcher_exe(token: str) -> bytes:
             release = json.loads(resp.read().decode("utf-8"))
 
         asset = next(
-            (item for item in release.get("assets", []) if item.get("name") == _LAUNCHER_ASSET_NAME),
+            (
+                item
+                for item in release.get("assets", [])
+                if item.get("name", "").startswith(_INSTALLER_ASSET_PREFIX)
+                and item.get("name", "").endswith(".exe")
+            ),
             None,
         )
         if not asset:
             raise RuntimeError("No se encontro el ejecutable en GitHub Releases.")
 
-        download_headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/octet-stream",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
+        download_headers = {"Accept": "application/octet-stream", "X-GitHub-Api-Version": "2022-11-28"}
+        if token:
+            download_headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(asset["url"], headers=download_headers)
         with urllib.request.urlopen(req, timeout=120) as resp:
             return resp.read()
@@ -197,7 +201,7 @@ def paso_descarga():
             st.download_button(
                 "⬇  Descargar para Windows",
                 data=st.session_state.launcher_exe,
-                file_name=_LAUNCHER_ASSET_NAME,
+                file_name="Previred-Downloader-Setup.exe",
                 mime="application/vnd.microsoft.portable-executable",
                 use_container_width=True,
                 type="primary",
@@ -205,18 +209,13 @@ def paso_descarga():
         else:
             if st.button("⬇  Preparar descarga", use_container_width=True, type="primary"):
                 token = _get_launcher_token()
-                if not token:
-                    st.session_state.launcher_download_error = (
-                        "Falta configurar LAUNCHER_RELEASE_DOWNLOAD_TOKEN en el entorno de la app."
-                    )
-                else:
-                    try:
-                        with st.spinner("Preparando descarga..."):
-                            st.session_state.launcher_exe = _fetch_launcher_exe(token)
-                        st.session_state.launcher_download_error = ""
-                        st.rerun()
-                    except RuntimeError as exc:
-                        st.session_state.launcher_download_error = str(exc)
+                try:
+                    with st.spinner("Preparando descarga..."):
+                        st.session_state.launcher_exe = _fetch_launcher_exe(token)
+                    st.session_state.launcher_download_error = ""
+                    st.rerun()
+                except RuntimeError as exc:
+                    st.session_state.launcher_download_error = str(exc)
 
         if st.session_state.launcher_download_error:
             st.error(st.session_state.launcher_download_error)

@@ -8,3 +8,11 @@ test_*_manual.py
 *.zip
 previred-launcher/config.py
 .streamlit/secrets.toml
+graphify-out/
+desktop/node_modules/
+desktop/dist/
+desktop/dist-ui/
+desktop/python-runtime/
+desktop/ms-playwright/
+desktop/.runtime-downloads/
+desktop/src/config.generated.json

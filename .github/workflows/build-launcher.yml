@@ -54,4 +54,4 @@ jobs:
           tag_name: launcher-latest
           name: "Previred Downloader (Windows)"
           files: previred-launcher/dist/PreviredDownloader.exe
-          make_latest: true
+          make_latest: false

@@ -1,0 +1,98 @@
+name: Desktop Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/desktop-release.yml"
+      - "bot/**"
+      - "desktop/**"
+      - "desktop_backend/**"
+      - "checkpoint.py"
+      - "models.py"
+      - "zip_builder.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Resolve release version
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $releaseJson = gh release list --repo "$env:GITHUB_REPOSITORY" --limit 100 --json tagName
+          $latest = $releaseJson | node -e "const fs=require('fs'); const releases=JSON.parse(fs.readFileSync(0,'utf8')); const versions=releases.map(r=>/^v(\d+)\.(\d+)\.(\d+)$/.exec(r.tagName)).filter(Boolean).map(m=>m.slice(1).map(Number)).sort((a,b)=>a[0]-b[0]||a[1]-b[1]||a[2]-b[2]).pop() || [0,1,0]; console.log(versions.join('.'));"
+          $parts = $latest.Split(".")
+          $version = "$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "tag=v$version" >> $env:GITHUB_OUTPUT
+
+      - name: Apply release version
+        working-directory: desktop
+        run: npm version ${{ steps.release.outputs.version }} --no-git-tag-version
+
+      - name: Ensure GitHub release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$env:RELEASE_TAG" $env:GITHUB_SHA 2>$null || echo "Tag already exists"
+          git push origin "$env:RELEASE_TAG" 2>$null || echo "Tag already pushed"
+          gh release view "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" `
+            || gh release create "$env:RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --title "$env:RELEASE_TAG" --notes "Windows desktop release $env:RELEASE_TAG"
+
+      - name: Build and publish desktop app
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_ID: previred-downloader
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npm run dist -- --win --publish always
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.yml
+            desktop/dist/*.blockmap
+          if-no-files-found: error
