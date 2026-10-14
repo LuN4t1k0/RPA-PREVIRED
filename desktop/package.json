@@ -32,10 +32,12 @@
   "build": {
     "appId": "cl.previred.downloader",
     "productName": "Previred Downloader",
+    "icon": "build/icon",
     "asar": true,
     "files": [
       "src/**/*",
       "dist-ui/**/*",
+      "build/icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -64,6 +66,7 @@
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "artifactName": "Previred-Downloader-Setup-${version}.${ext}",
       "target": ["nsis"]
     },

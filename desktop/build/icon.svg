@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Previred Downloader">
+  <defs>
+    <linearGradient id="bg" x1="40" y1="28" x2="216" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#11a99a"/>
+      <stop offset="1" stop-color="#07564f"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="52" y1="36" x2="204" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".48"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".08"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="216" height="216" rx="42" fill="url(#bg)"/>
+  <rect x="30" y="30" width="196" height="196" rx="34" fill="none" stroke="url(#edge)" stroke-width="8"/>
+  <path
+    d="M69 211V47h65c41 0 67 23 67 59 0 37-26 60-67 60h-24v45H69zm41-82h23c18 0 28-8 28-23 0-14-10-22-28-22h-23v45z"
+    fill="#ffffff"
+    fill-rule="evenodd"/>
+</svg>

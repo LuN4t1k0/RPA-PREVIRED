@@ -129,6 +129,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 700,
     title: "Previred Downloader",
+    icon: path.join(__dirname, "..", "build", "icon.png"),
     backgroundColor: "#f6f7fb",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
